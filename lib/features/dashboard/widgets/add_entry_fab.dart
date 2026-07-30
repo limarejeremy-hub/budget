@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
-/// Bouton flottant unique "+". Les options sont temporaires pour la Phase 2 —
-/// les formulaires réels arrivent en Phase 3/4.
+import '../../entries/fixed_expense_form_page.dart';
+import '../../entries/income_form_page.dart';
+import '../../entries/saving_form_page.dart';
+import '../../entries/variable_expense_form_page.dart';
+
+/// Bouton flottant "+" du tableau de bord : ouvre le choix du type de
+/// saisie, puis le vrai formulaire correspondant pour le cycle [cycleId].
 class AddEntryFab extends StatelessWidget {
-  const AddEntryFab({super.key});
+  final int cycleId;
+  const AddEntryFab({super.key, required this.cycleId});
 
   @override
   Widget build(BuildContext context) {
@@ -18,15 +24,39 @@ class AddEntryFab extends StatelessWidget {
       context: context,
       showDragHandle: true,
       builder: (context) {
-        return const SafeArea(
+        return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _AddOptionTile(icon: Icons.shopping_bag_outlined, label: 'Dépense'),
-              _AddOptionTile(icon: Icons.receipt_long_outlined, label: 'Charge fixe'),
-              _AddOptionTile(icon: Icons.payments_outlined, label: 'Revenu'),
-              _AddOptionTile(icon: Icons.savings_outlined, label: 'Épargne'),
-              SizedBox(height: 8),
+              _AddOptionTile(
+                icon: Icons.shopping_bag_outlined,
+                label: 'Dépense',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => VariableExpenseFormPage(cycleId: cycleId),
+                )),
+              ),
+              _AddOptionTile(
+                icon: Icons.receipt_long_outlined,
+                label: 'Charge fixe',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => FixedExpenseFormPage(cycleId: cycleId),
+                )),
+              ),
+              _AddOptionTile(
+                icon: Icons.payments_outlined,
+                label: 'Revenu',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => IncomeFormPage(cycleId: cycleId),
+                )),
+              ),
+              _AddOptionTile(
+                icon: Icons.savings_outlined,
+                label: 'Épargne',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => SavingFormPage(cycleId: cycleId),
+                )),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         );
@@ -38,7 +68,8 @@ class AddEntryFab extends StatelessWidget {
 class _AddOptionTile extends StatelessWidget {
   final IconData icon;
   final String label;
-  const _AddOptionTile({required this.icon, required this.label});
+  final VoidCallback onTap;
+  const _AddOptionTile({required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -47,9 +78,7 @@ class _AddOptionTile extends StatelessWidget {
       title: Text(label),
       onTap: () {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$label — disponible prochainement')),
-        );
+        onTap();
       },
     );
   }

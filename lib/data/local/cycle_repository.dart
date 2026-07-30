@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import '../../core/constants/default_categories.dart';
 import 'database.dart';
 
 class CycleDashboardRawData {
@@ -18,7 +19,9 @@ class CycleDashboardRawData {
   });
 }
 
-/// Requêtes Drift pour charger le cycle courant et ses données associées.
+/// Requêtes Drift pour charger le cycle courant, ses données associées, et
+/// la création / modification / suppression des saisies (revenus, charges
+/// fixes, dépenses variables, épargnes) et des cycles.
 class CycleRepository {
   final AppDatabase db;
   const CycleRepository(this.db);
@@ -64,4 +67,242 @@ class CycleRepository {
         ]))
         .asyncMap((_) => loadCurrentCycleData());
   }
+
+  /// Tous les cycles (courant compris), du plus récent au plus ancien.
+  Stream<List<BudgetCycle>> watchAllCycles() {
+    return (db.select(db.budgetCycles)..orderBy([(c) => OrderingTerm.desc(c.startDate)]))
+        .watch();
+  }
+
+  // ---------------------------------------------------------------------
+  // Catégories
+  // ---------------------------------------------------------------------
+
+  /// Peuple les catégories par défaut si la table est vide. Idempotent :
+  /// peut être appelée à chaque création de cycle sans risque de doublon.
+  Future<void> ensureDefaultCategories() async {
+    final existing = await db.select(db.categories).get();
+    if (existing.isNotEmpty) return;
+
+    final all = <(String, String, String)>[
+      ...defaultIncomeCategories,
+      ...defaultFixedCategories,
+      ...defaultVariableCategories,
+      ...defaultSavingCategories,
+    ];
+
+    await db.batch((batch) {
+      batch.insertAll(db.categories, [
+        for (final (name, type, icon) in all)
+          CategoriesCompanion.insert(name: name, type: type, icon: Value(icon)),
+      ]);
+    });
+  }
+
+  Future<List<Category>> categoriesForType(String type) {
+    return (db.select(db.categories)
+          ..where((c) => c.type.equals(type) & c.isActive.equals(true))
+          ..orderBy([(c) => OrderingTerm.asc(c.sortOrder)]))
+        .get();
+  }
+
+  // ---------------------------------------------------------------------
+  // Cycles
+  // ---------------------------------------------------------------------
+
+  Future<int> createCycle({
+    required DateTime startDate,
+    required DateTime endDate,
+    String? name,
+    int? declaredBankBalanceCents,
+  }) async {
+    await ensureDefaultCategories();
+    return db.into(db.budgetCycles).insert(BudgetCyclesCompanion.insert(
+          startDate: startDate,
+          endDate: endDate,
+          name: Value(name),
+          declaredBankBalanceCents: Value(declaredBankBalanceCents),
+        ));
+  }
+
+  // ---------------------------------------------------------------------
+  // Revenus
+  // ---------------------------------------------------------------------
+
+  Future<int> createIncome({
+    required int cycleId,
+    required String name,
+    required int expectedAmountCents,
+    int? actualAmountCents,
+    required DateTime expectedDate,
+    bool isRecurring = false,
+    bool isActive = true,
+  }) {
+    return db.into(db.incomes).insert(IncomesCompanion.insert(
+          cycleId: cycleId,
+          name: name,
+          expectedAmountCents: expectedAmountCents,
+          actualAmountCents: Value(actualAmountCents),
+          expectedDate: expectedDate,
+          isRecurring: Value(isRecurring),
+          isActive: Value(isActive),
+        ));
+  }
+
+  Future<void> updateIncome({
+    required int id,
+    required String name,
+    required int expectedAmountCents,
+    int? actualAmountCents,
+    required DateTime expectedDate,
+    required bool isRecurring,
+    required bool isActive,
+  }) {
+    return (db.update(db.incomes)..where((t) => t.id.equals(id))).write(IncomesCompanion(
+      name: Value(name),
+      expectedAmountCents: Value(expectedAmountCents),
+      actualAmountCents: Value(actualAmountCents),
+      expectedDate: Value(expectedDate),
+      isRecurring: Value(isRecurring),
+      isActive: Value(isActive),
+    ));
+  }
+
+  Future<void> deleteIncome(int id) => (db.delete(db.incomes)..where((t) => t.id.equals(id))).go();
+
+  // ---------------------------------------------------------------------
+  // Charges fixes
+  // ---------------------------------------------------------------------
+
+  Future<int> createFixedExpense({
+    required int cycleId,
+    required String name,
+    required int expectedAmountCents,
+    int? actualAmountCents,
+    required DateTime expectedDate,
+    int? categoryId,
+    bool isRecurring = false,
+    bool isActive = true,
+  }) {
+    return db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
+          cycleId: cycleId,
+          name: name,
+          expectedAmountCents: expectedAmountCents,
+          actualAmountCents: Value(actualAmountCents),
+          expectedDate: expectedDate,
+          categoryId: Value(categoryId),
+          isRecurring: Value(isRecurring),
+          isActive: Value(isActive),
+        ));
+  }
+
+  Future<void> updateFixedExpense({
+    required int id,
+    required String name,
+    required int expectedAmountCents,
+    int? actualAmountCents,
+    required DateTime expectedDate,
+    int? categoryId,
+    required bool isRecurring,
+    required bool isActive,
+  }) {
+    return (db.update(db.fixedExpenses)..where((t) => t.id.equals(id)))
+        .write(FixedExpensesCompanion(
+      name: Value(name),
+      expectedAmountCents: Value(expectedAmountCents),
+      actualAmountCents: Value(actualAmountCents),
+      expectedDate: Value(expectedDate),
+      categoryId: Value(categoryId),
+      isRecurring: Value(isRecurring),
+      isActive: Value(isActive),
+    ));
+  }
+
+  Future<void> deleteFixedExpense(int id) =>
+      (db.delete(db.fixedExpenses)..where((t) => t.id.equals(id))).go();
+
+  // ---------------------------------------------------------------------
+  // Dépenses variables
+  // ---------------------------------------------------------------------
+
+  Future<int> createVariableExpense({
+    required int cycleId,
+    String? name,
+    required int amountCents,
+    required DateTime date,
+    int? categoryId,
+  }) {
+    return db.into(db.variableExpenses).insert(VariableExpensesCompanion.insert(
+          cycleId: cycleId,
+          name: Value(name),
+          amountCents: amountCents,
+          date: date,
+          categoryId: Value(categoryId),
+        ));
+  }
+
+  Future<void> updateVariableExpense({
+    required int id,
+    String? name,
+    required int amountCents,
+    required DateTime date,
+    int? categoryId,
+  }) {
+    return (db.update(db.variableExpenses)..where((t) => t.id.equals(id)))
+        .write(VariableExpensesCompanion(
+      name: Value(name),
+      amountCents: Value(amountCents),
+      date: Value(date),
+      categoryId: Value(categoryId),
+      updatedAt: Value(DateTime.now()),
+    ));
+  }
+
+  Future<void> deleteVariableExpense(int id) =>
+      (db.delete(db.variableExpenses)..where((t) => t.id.equals(id))).go();
+
+  // ---------------------------------------------------------------------
+  // Épargnes
+  // ---------------------------------------------------------------------
+
+  Future<int> createSaving({
+    required int cycleId,
+    required String name,
+    required int expectedAmountCents,
+    int? actualAmountCents,
+    required DateTime expectedDate,
+    bool isRecurring = false,
+    bool isActive = true,
+  }) {
+    return db.into(db.savings).insert(SavingsCompanion.insert(
+          cycleId: cycleId,
+          name: name,
+          expectedAmountCents: expectedAmountCents,
+          actualAmountCents: Value(actualAmountCents),
+          expectedDate: expectedDate,
+          isRecurring: Value(isRecurring),
+          isActive: Value(isActive),
+        ));
+  }
+
+  Future<void> updateSaving({
+    required int id,
+    required String name,
+    required int expectedAmountCents,
+    int? actualAmountCents,
+    required DateTime expectedDate,
+    required bool isRecurring,
+    required bool isActive,
+  }) {
+    return (db.update(db.savings)..where((t) => t.id.equals(id))).write(SavingsCompanion(
+      name: Value(name),
+      expectedAmountCents: Value(expectedAmountCents),
+      actualAmountCents: Value(actualAmountCents),
+      expectedDate: Value(expectedDate),
+      isRecurring: Value(isRecurring),
+      isActive: Value(isActive),
+    ));
+  }
+
+  Future<void> deleteSaving(int id) => (db.delete(db.savings)..where((t) => t.id.equals(id))).go();
 }

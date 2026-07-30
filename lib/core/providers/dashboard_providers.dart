@@ -20,6 +20,7 @@ final dashboardProvider = StreamProvider.autoDispose<DashboardViewData?>((ref) {
     if (raw == null) return null;
 
     return builder.build(
+      cycleId: raw.cycle.id,
       cycleStart: raw.cycle.startDate,
       cycleEnd: raw.cycle.endDate,
       incomes: raw.incomes.map(incomeFromRow).toList(),

@@ -23,4 +23,6 @@ flutter test
 
 - Phase 1 — Socle : ✅ (base Drift, thème, navigation, service de calcul, service de statut des charges)
 - Phase 2 — Tableau de bord : ✅ (Argent Libre, résumé du cycle, section "À surveiller", bouton "+")
-- Phases 3 à 7 : à venir
+- Phase 3 — Saisie réelle : ✅ (création de cycle, ajout/modification/suppression des revenus,
+  charges fixes, dépenses variables et épargnes, écrans Charges/Dépenses/Historique/Paramètres)
+- Statistiques avancées, export, synchronisation bancaire, refonte visuelle : à venir

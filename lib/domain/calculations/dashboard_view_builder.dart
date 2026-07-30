@@ -16,6 +16,7 @@ class DashboardViewBuilder {
   }) : _calculationService = calculationService;
 
   DashboardViewData build({
+    required int cycleId,
     required DateTime cycleStart,
     required DateTime cycleEnd,
     required List<IncomeEntity> incomes,
@@ -50,6 +51,7 @@ class DashboardViewBuilder {
       ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
 
     return DashboardViewData(
+      cycleId: cycleId,
       cycleStart: cycleStart,
       cycleEnd: cycleEnd,
       totalIncomeCents: totalIncome,
