@@ -14,6 +14,7 @@ void main() {
 
   test('calcule le reste réel et identifie la prochaine charge à vérifier', () {
     final result = builder.build(
+      cycleId: 1,
       cycleStart: cycleStart,
       cycleEnd: cycleEnd,
       incomes: [

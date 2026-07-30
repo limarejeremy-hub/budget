@@ -14,6 +14,7 @@ Widget _wrap(Widget child, List<Override> overrides) {
 
 DashboardViewData _sampleData({int unconfirmed = 4, int? declaredBalance = 264000}) {
   return DashboardViewData(
+    cycleId: 1,
     cycleStart: DateTime(2026, 7, 27),
     cycleEnd: DateTime(2026, 8, 26),
     totalIncomeCents: 515000,
@@ -41,7 +42,7 @@ void main() {
     await tester.pump();
 
     expect(find.text('Aucun cycle en cours'), findsOneWidget);
-    expect(find.text('Charger les données de démonstration'), findsOneWidget);
+    expect(find.text('Créer mon premier cycle'), findsOneWidget);
   });
 
   testWidgets('affiche ARGENT LIBRE, le montant et la section À surveiller', (tester) async {
@@ -81,7 +82,8 @@ void main() {
       const DashboardPage(),
       [dashboardProvider.overrideWith((ref) => Stream.value(data))],
     ));
-    await tester.pump();
+    // Laisse la transition d'apparition du FAB se terminer avant de taper.
+    await tester.pumpAndSettle();
 
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();

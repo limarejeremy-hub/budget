@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
-import '../../core/providers/database_provider.dart';
 import '../../core/theme/app_theme.dart';
-import '../../data/local/demo_data_seeder.dart';
 import '../../domain/models/dashboard_view_data.dart';
+import '../cycle/cycle_creation_page.dart';
+import '../entries/incomes_list_page.dart';
+import '../entries/savings_list_page.dart';
 import 'widgets/add_entry_fab.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -15,6 +16,7 @@ class DashboardPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dashboardAsync = ref.watch(dashboardProvider);
+    final data = dashboardAsync.valueOrNull;
 
     return Scaffold(
       body: SafeArea(
@@ -24,16 +26,16 @@ class DashboardPage extends ConsumerWidget {
           data: (data) => data == null ? const _EmptyState() : _DashboardContent(data: data),
         ),
       ),
-      floatingActionButton: const AddEntryFab(),
+      floatingActionButton: data == null ? null : AddEntryFab(cycleId: data.cycleId),
     );
   }
 }
 
-class _EmptyState extends ConsumerWidget {
+class _EmptyState extends StatelessWidget {
   const _EmptyState();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -46,17 +48,17 @@ class _EmptyState extends ConsumerWidget {
                 style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
-              'Chargez les données de démonstration pour découvrir BudgetPilot.',
+              'Créez votre premier cycle budgétaire pour commencer à saisir vos revenus, '
+              'charges, dépenses et épargnes.',
               style: Theme.of(context).textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: () async {
-                final db = ref.read(appDatabaseProvider);
-                await DemoDataSeeder(db).seedIfEmpty();
-              },
-              child: const Text('Charger les données de démonstration'),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const CycleCreationPage(),
+              )),
+              child: const Text('Créer mon premier cycle'),
             ),
           ],
         ),
@@ -161,10 +163,10 @@ class _CycleSummaryGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      ('Revenus du cycle', data.totalIncomeCents),
-      ('Charges fixes réservées', data.totalFixedExpensesCents),
-      ('Dépenses variables', data.totalVariableExpensesCents),
-      ('Épargne réservée', data.totalSavingsCents),
+      ('Revenus du cycle', data.totalIncomeCents, _openIncomes),
+      ('Charges fixes réservées', data.totalFixedExpensesCents, null),
+      ('Dépenses variables', data.totalVariableExpensesCents, null),
+      ('Épargne réservée', data.totalSavingsCents, _openSavings),
     ];
 
     return GridView.count(
@@ -174,20 +176,40 @@ class _CycleSummaryGrid extends StatelessWidget {
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
       childAspectRatio: 1.6,
-      children: [for (final (label, cents) in items) _SummaryTile(label: label, cents: cents)],
+      children: [
+        for (final (label, cents, opener) in items)
+          _SummaryTile(
+            label: label,
+            cents: cents,
+            onTap: opener == null ? null : () => opener(context, data.cycleId),
+          ),
+      ],
     );
+  }
+
+  static void _openIncomes(BuildContext context, int cycleId) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => IncomesListPage(cycleId: cycleId),
+    ));
+  }
+
+  static void _openSavings(BuildContext context, int cycleId) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SavingsListPage(cycleId: cycleId),
+    ));
   }
 }
 
 class _SummaryTile extends StatelessWidget {
   final String label;
   final int cents;
-  const _SummaryTile({required this.label, required this.cents});
+  final VoidCallback? onTap;
+  const _SummaryTile({required this.label, required this.cents, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
+    final content = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHigh,
@@ -205,6 +227,9 @@ class _SummaryTile extends StatelessWidget {
         ],
       ),
     );
+
+    if (onTap == null) return content;
+    return InkWell(borderRadius: BorderRadius.circular(16), onTap: onTap, child: content);
   }
 }
 

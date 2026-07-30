@@ -34,6 +34,7 @@ class RecurringTemplates extends Table {
 
 class BudgetCycles extends Table {
   IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text().nullable()();
   DateTimeColumn get startDate => dateTime()();
   DateTimeColumn get endDate => dateTime()();
   TextColumn get status => text().withDefault(const Constant('ouvert'))();
@@ -125,8 +126,21 @@ class AppSettingsTable extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  /// Utilisé par les tests pour injecter une base en mémoire.
+  AppDatabase.forTesting(super.executor);
+
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.addColumn(budgetCycles, budgetCycles.name);
+          }
+        },
+      );
 }
 
 LazyDatabase _openConnection() {

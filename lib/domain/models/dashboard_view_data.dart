@@ -2,6 +2,7 @@ import '../entities/fixed_expense_entity.dart';
 
 /// Modèle de vue prêt à afficher — construit par [DashboardViewBuilder].
 class DashboardViewData {
+  final int cycleId;
   final DateTime cycleStart;
   final DateTime cycleEnd;
   final int totalIncomeCents;
@@ -16,6 +17,7 @@ class DashboardViewData {
   final int? declaredBankBalanceCents;
 
   const DashboardViewData({
+    required this.cycleId,
     required this.cycleStart,
     required this.cycleEnd,
     required this.totalIncomeCents,
