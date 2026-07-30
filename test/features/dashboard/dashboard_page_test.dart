@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:budgetpilot/core/formatting/currency_formatter.dart';
 import 'package:budgetpilot/core/providers/dashboard_providers.dart';
@@ -28,6 +29,10 @@ DashboardViewData _sampleData({int unconfirmed = 4, int? declaredBalance = 26400
 }
 
 void main() {
+  setUpAll(() async {
+    await initializeDateFormatting('fr_FR', null);
+  });
+
   testWidgets("affiche l'état vide quand aucun cycle n'existe", (tester) async {
     await tester.pumpWidget(_wrap(
       const DashboardPage(),
@@ -40,6 +45,11 @@ void main() {
   });
 
   testWidgets('affiche ARGENT LIBRE, le montant et la section À surveiller', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final data = _sampleData();
 
     await tester.pumpWidget(_wrap(

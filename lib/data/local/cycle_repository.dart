@@ -55,7 +55,7 @@ class CycleRepository {
   Stream<CycleDashboardRawData?> watchCurrentCycleData() async* {
     yield await loadCurrentCycleData();
     yield* db
-        .tableUpdates(TableUpdateQuery.onTableList([
+        .tableUpdates(TableUpdateQuery.onAllTables([
           db.budgetCycles,
           db.incomes,
           db.fixedExpenses,
