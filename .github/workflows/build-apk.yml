@@ -1,0 +1,49 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Installer Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          channel: 'stable'
+          cache: true
+
+      - name: Récupérer les dépendances
+        run: flutter pub get
+
+      - name: Générer le code Drift
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyser le projet
+        run: flutter analyze
+
+      - name: Lancer les tests
+        run: flutter test
+
+      - name: Compiler l'APK release
+        run: flutter build apk --release
+
+      - name: Publier l'APK en artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgetpilot-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
