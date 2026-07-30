@@ -13,8 +13,9 @@ class AddEntryFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FloatingActionButton(
+    return FloatingActionButton.small(
       onPressed: () => _showAddMenu(context),
+      tooltip: 'Ajouter',
       child: const Icon(Icons.add),
     );
   }

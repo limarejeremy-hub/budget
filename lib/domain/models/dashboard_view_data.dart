@@ -14,6 +14,11 @@ class DashboardViewData {
   final int unconfirmedChargesCount;
   final int unconfirmedChargesTotalCents;
   final FixedExpenseEntity? nextChargeToCheck;
+
+  /// Les prochaines charges fixes non confirmées (au plus 3), triées par
+  /// date prévue — même liste que [nextChargeToCheck] (son premier élément),
+  /// simplement exposée en totalité pour l'affichage "Prochaines échéances".
+  final List<FixedExpenseEntity> upcomingCharges;
   final int? declaredBankBalanceCents;
 
   const DashboardViewData({
@@ -29,6 +34,7 @@ class DashboardViewData {
     required this.unconfirmedChargesCount,
     required this.unconfirmedChargesTotalCents,
     this.nextChargeToCheck,
+    this.upcomingCharges = const [],
     this.declaredBankBalanceCents,
   });
 }
