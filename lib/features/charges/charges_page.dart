@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/entries_providers.dart';
+import '../../core/theme/charge_status_presentation.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
@@ -62,9 +63,11 @@ class _ChargeTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final presentation = ChargeStatusPresentation.of(charge.status, context);
     return ListTile(
+      leading: Icon(presentation.icon, color: presentation.color),
       title: Text(charge.name),
-      subtitle: Text('${formatDayMonthFr(charge.expectedDate)} · ${_statusLabel(charge.status)}'),
+      subtitle: Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}'),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -85,25 +88,6 @@ class _ChargeTile extends ConsumerWidget {
         builder: (_) => FixedExpenseFormPage(cycleId: cycleId, existing: charge),
       )),
     );
-  }
-
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'a_venir':
-        return 'À venir';
-      case 'a_verifier_aujourdhui':
-        return "À vérifier aujourd'hui";
-      case 'a_confirmer':
-        return 'À confirmer';
-      case 'prelevee':
-        return 'Prélevée';
-      case 'suspendue':
-        return 'Suspendue';
-      case 'incident':
-        return 'Incident';
-      default:
-        return status;
-    }
   }
 }
 

@@ -1,0 +1,154 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
+
+import 'package:budgetpilot/core/constants/app_constants.dart';
+import 'package:budgetpilot/core/formatting/currency_formatter.dart';
+import 'package:budgetpilot/core/providers/dashboard_providers.dart';
+import 'package:budgetpilot/domain/entities/fixed_expense_entity.dart';
+import 'package:budgetpilot/domain/models/dashboard_view_data.dart';
+import 'package:budgetpilot/features/dashboard/dashboard_page.dart';
+
+Widget _wrap(Widget child, List<Override> overrides) {
+  return ProviderScope(overrides: overrides, child: MaterialApp(home: child));
+}
+
+DashboardViewData _sampleData({
+  double remainingRatio = 0.24,
+  List<FixedExpenseEntity> upcomingCharges = const [],
+}) {
+  return DashboardViewData(
+    cycleId: 1,
+    cycleStart: DateTime(2026, 7, 27),
+    cycleEnd: DateTime(2026, 8, 26),
+    totalIncomeCents: 515000,
+    totalFixedExpensesCents: 245000,
+    totalVariableExpensesCents: 67700,
+    totalSavingsCents: 80000,
+    realRemainingCents: 122300,
+    remainingRatio: remainingRatio,
+    unconfirmedChargesCount: upcomingCharges.length,
+    unconfirmedChargesTotalCents: 61200,
+    upcomingCharges: upcomingCharges,
+  );
+}
+
+Future<void> _pumpDashboard(WidgetTester tester, DashboardViewData data) async {
+  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  await tester.pumpWidget(_wrap(
+    const DashboardPage(),
+    [dashboardProvider.overrideWith((ref) => Stream.value(data))],
+  ));
+  await tester.pump();
+}
+
+void main() {
+  setUpAll(() async {
+    await initializeDateFormatting('fr_FR', null);
+  });
+
+  group('Carte Argent Libre', () {
+    testWidgets('affiche le libellé et le montant formaté', (tester) async {
+      final data = _sampleData();
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('ARGENT LIBRE'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(data.realRemainingCents)), findsOneWidget);
+      expect(find.textContaining("Disponible jusqu'au"), findsOneWidget);
+    });
+
+    testWidgets('badge vert "Situation confortable" quand le ratio est confortable',
+        (tester) async {
+      await _pumpDashboard(tester, _sampleData(remainingRatio: 0.30));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Situation confortable'), findsOneWidget);
+    });
+
+    testWidgets('badge orange "À surveiller" quand le ratio est intermédiaire', (tester) async {
+      await _pumpDashboard(tester, _sampleData(remainingRatio: 0.10));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('À surveiller'), findsOneWidget);
+    });
+
+    testWidgets('badge rouge "Budget serré" quand le ratio est faible', (tester) async {
+      await _pumpDashboard(tester, _sampleData(remainingRatio: 0.02));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Budget serré'), findsOneWidget);
+    });
+  });
+
+  group('Résumé du cycle', () {
+    testWidgets('affiche les quatre cartes avec libellé et montant', (tester) async {
+      final data = _sampleData();
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Résumé du cycle'), findsOneWidget);
+
+      expect(find.text('Revenus'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(data.totalIncomeCents)), findsOneWidget);
+
+      expect(find.text('Charges'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(data.totalFixedExpensesCents)), findsOneWidget);
+
+      expect(find.text('Dépenses'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(data.totalVariableExpensesCents)), findsOneWidget);
+
+      expect(find.text('Épargnes'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(data.totalSavingsCents)), findsOneWidget);
+    });
+  });
+
+  group('Prochaines échéances', () {
+    testWidgets('affiche les charges à venir avec nom, date et montant', (tester) async {
+      final charges = [
+        FixedExpenseEntity(
+          id: 1,
+          cycleId: 1,
+          name: 'Crédit maison',
+          expectedAmountCents: 85000,
+          expectedDate: DateTime(2026, 8, 3),
+          status: ChargeStatus.aVenir,
+        ),
+        FixedExpenseEntity(
+          id: 2,
+          cycleId: 1,
+          name: 'Électricité',
+          expectedAmountCents: 18000,
+          expectedDate: DateTime(2026, 8, 10),
+          status: ChargeStatus.aConfirmer,
+        ),
+      ];
+      await _pumpDashboard(tester, _sampleData(upcomingCharges: charges));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Prochaines échéances'), findsOneWidget);
+      expect(find.text('Voir toutes'), findsOneWidget);
+      expect(find.text('Crédit maison'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(85000)), findsOneWidget);
+      expect(find.text('Électricité'), findsOneWidget);
+      expect(find.text(formatCentsAsEuro(18000)), findsOneWidget);
+    });
+
+    testWidgets('affiche un état vide quand aucune échéance', (tester) async {
+      await _pumpDashboard(tester, _sampleData(upcomingCharges: const []));
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Prochaines échéances'), findsOneWidget);
+      expect(find.text('Aucune échéance à venir'), findsOneWidget);
+    });
+  });
+}

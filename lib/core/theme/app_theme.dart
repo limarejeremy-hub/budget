@@ -42,8 +42,15 @@ class AppTheme {
         centerTitle: false,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: colorScheme.surface,
+        // Fond légèrement différencié du fond général pour bien détacher la
+        // barre de navigation, tout en restant sombre.
+        backgroundColor: colorScheme.surfaceContainerHigh,
+        indicatorColor: colorScheme.secondaryContainer,
         elevation: 0,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primaryContainer,
+        foregroundColor: colorScheme.onPrimaryContainer,
       ),
     );
   }
@@ -54,5 +61,13 @@ class AppTheme {
     if (ratio < 0.05) return BudgetColors.danger;
     if (ratio < 0.20) return BudgetColors.warning;
     return BudgetColors.positive;
+  }
+
+  /// Libellé du badge de situation affiché sur la carte Argent Libre —
+  /// mêmes seuils que [colorForRemainingRatio].
+  static String statusLabelForRemainingRatio(double ratio) {
+    if (ratio < 0.05) return 'Budget serré';
+    if (ratio < 0.20) return 'À surveiller';
+    return 'Situation confortable';
   }
 }

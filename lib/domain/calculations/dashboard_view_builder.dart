@@ -64,6 +64,7 @@ class DashboardViewBuilder {
       unconfirmedChargesTotalCents:
           _calculationService.calculateRemainingUnconfirmedCharges(fixedExpenses),
       nextChargeToCheck: unconfirmed.isEmpty ? null : unconfirmed.first,
+      upcomingCharges: unconfirmed.take(3).toList(),
       declaredBankBalanceCents: declaredBankBalanceCents,
     );
   }

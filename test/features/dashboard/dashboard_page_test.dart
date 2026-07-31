@@ -45,7 +45,8 @@ void main() {
     expect(find.text('Créer mon premier cycle'), findsOneWidget);
   });
 
-  testWidgets('affiche ARGENT LIBRE, le montant et la section À surveiller', (tester) async {
+  testWidgets('affiche ARGENT LIBRE, le montant et la section Prochaines échéances',
+      (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -61,7 +62,7 @@ void main() {
 
     expect(find.text('ARGENT LIBRE'), findsOneWidget);
     expect(find.textContaining(formatCentsAsEuro(data.realRemainingCents)), findsOneWidget);
-    expect(find.textContaining('À surveiller'), findsOneWidget);
+    expect(find.textContaining('Prochaines échéances'), findsOneWidget);
     expect(find.textContaining('Solde bancaire déclaré'), findsOneWidget);
   });
 
