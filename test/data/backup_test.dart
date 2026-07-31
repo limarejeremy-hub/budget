@@ -132,6 +132,9 @@ void main() {
       annualRatePercent: 3.5,
       expectedEndDate: DateTime(2029, 1, 1),
       remainingInstallments: 36,
+      organisme: 'Crédit Agricole',
+      colorValue: 0xFF4C8DFF,
+      iconCodePoint: 0xe1b1,
     );
 
     final backup = await repository.exportBackup();
@@ -150,6 +153,9 @@ void main() {
     expect(credits.single.name, 'Voiture');
     expect(credits.single.remainingCapitalCents, 900000);
     expect(credits.single.annualRatePercent, 3.5);
+    expect(credits.single.organisme, 'Crédit Agricole');
+    expect(credits.single.colorValue, 0xFF4C8DFF);
+    expect(credits.single.iconCodePoint, 0xe1b1);
   });
 
   test('importBackup avec replaceExisting supprime aussi les crédits existants', () async {
@@ -196,5 +202,43 @@ void main() {
     final imported = await repository.importBackup(legacyBackup, replaceExisting: false);
     expect(imported, 1);
     expect(await repository.loadCredits(), isEmpty);
+  });
+
+  test('une sauvegarde V0.7 (crédits sans organisme/couleur/icône) importe toujours correctement', () async {
+    // Format tel qu'exporté juste après l'introduction du module Crédits,
+    // avant l'ajout des champs organisme/colorValue/iconCodePoint — ces
+    // clés sont absentes de chaque entrée 'credits', pas seulement nulles.
+    final legacyBackup = {
+      'formatVersion': backupFormatVersion,
+      'exportedAt': DateTime(2026, 1, 1).toIso8601String(),
+      'cycles': <Map<String, dynamic>>[],
+      'credits': [
+        {
+          'name': 'Voiture',
+          'initialAmountCents': 1500000,
+          'remainingCapitalCents': 900000,
+          'monthlyPaymentCents': 25000,
+          'annualRatePercent': null,
+          'startDate': null,
+          'expectedEndDate': DateTime(2029, 1, 1).toIso8601String(),
+          'remainingInstallments': 36,
+          'creditType': null,
+          'earlyRepaymentAllowed': true,
+          'earlyRepaymentPenaltyCents': null,
+          'notes': null,
+          'isActive': true,
+          // Pas de 'organisme' / 'colorValue' / 'iconCodePoint' du tout.
+        },
+      ],
+    };
+
+    expect(() => repository.validateBackup(legacyBackup), returnsNormally);
+
+    await repository.importBackup(legacyBackup, replaceExisting: false);
+    final credit = (await repository.loadCredits()).single;
+    expect(credit.name, 'Voiture');
+    expect(credit.organisme, isNull);
+    expect(credit.colorValue, isNull);
+    expect(credit.iconCodePoint, isNull);
   });
 }

@@ -50,5 +50,8 @@ depuis Paramètres).
   priorité au choix de l'utilisateur, indicateurs comparatifs, simulation simplifiée de
   versement anticipé, crédits inclus dans la sauvegarde export/import avec compatibilité
   ascendante ; suppression de "Résumé rapide", section "Cette semaine" compacte quand vide,
-  indicateur "Jour X / Y" sur la progression du cycle, finitions de la carte Argent Libre)
+  indicateur "Jour X / Y" sur la progression du cycle, finitions de la carte Argent Libre ;
+  personnalisation par crédit — organisme, couleur, icône — priorité automatique par étoiles
+  (jamais imposée), simulateur multi-crédits comparant l'impact d'un même versement sur
+  chaque crédit actif, encart discret "Objectif conseillé" sur le tableau de bord)
 - Statistiques avancées, synchronisation bancaire : à venir

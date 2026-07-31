@@ -20,6 +20,7 @@ import '../../domain/entities/fixed_expense_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import '../charges/charge_detail_sheet.dart';
 import '../charges/charges_page.dart';
+import '../credits/widgets/credit_advice_card.dart';
 import '../credits/widgets/credits_summary_card.dart';
 import '../cycle/cycle_creation_page.dart';
 import '../cycle/cycle_detail_page.dart';
@@ -150,6 +151,8 @@ class _DashboardContent extends StatelessWidget {
             _CycleSummaryGrid(data: data),
             const SizedBox(height: AppSpacing.xl),
             const CreditsSummaryCard(),
+            const SizedBox(height: AppSpacing.lg),
+            const CreditAdviceCard(),
             const SizedBox(height: AppSpacing.xxl),
             _UpcomingChargesSection(data: data),
             if (data.declaredBankBalanceCents != null) ...[

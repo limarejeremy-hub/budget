@@ -75,6 +75,24 @@ class CreditCalculationService {
     if (b.annualRatePercent == null) return -1;
     return b.annualRatePercent!.compareTo(a.annualRatePercent!);
   }
+
+  /// Priorité automatique — jamais imposée comme une obligation, seulement
+  /// une indication visuelle basée sur le nombre de mensualités restantes :
+  /// moins de 6 mois (5 étoiles), entre 6 et 24 (3 étoiles), au-delà (1
+  /// étoile).
+  int priorityStars(CreditEntity credit) {
+    if (credit.remainingInstallments < 6) return 5;
+    if (credit.remainingInstallments <= 24) return 3;
+    return 1;
+  }
+
+  /// Libellé associé à [priorityStars].
+  String priorityLabel(CreditEntity credit) {
+    final stars = priorityStars(credit);
+    if (stars == 5) return 'Priorité maximale';
+    if (stars == 3) return 'Priorité moyenne';
+    return 'Long terme';
+  }
 }
 
 /// Résultat d'une simulation de versement exceptionnel — toujours une
@@ -115,6 +133,78 @@ CreditPrepaymentSimulation simulateCreditPrepayment({
     monthsSaved: monthsSaved,
     estimatedEndDate: estimatedEndDate,
   );
+}
+
+/// Une option de remboursement parmi plusieurs, proposée par le simulateur
+/// multi-crédits : "et si ce versement était appliqué à CE crédit-là ?"
+/// Toujours une estimation simplifiée (voir [CreditPrepaymentSimulation]).
+class CreditRepaymentOption {
+  final CreditEntity credit;
+  final bool wouldBeFullyRepaid;
+  final int monthlyPaymentFreedCents;
+  final int monthsSaved;
+  final int remainingCapitalAfterCents;
+  final DateTime estimatedEndDate;
+
+  /// Estimation grossière des intérêts épargnés (taux annuel simple appliqué
+  /// au capital versé par anticipation, sur les mois gagnés) — `null` si le
+  /// crédit n'a pas de taux renseigné. Toujours présentée comme une
+  /// estimation, jamais comme un calcul exact.
+  final int? estimatedInterestSavedCents;
+
+  const CreditRepaymentOption({
+    required this.credit,
+    required this.wouldBeFullyRepaid,
+    required this.monthlyPaymentFreedCents,
+    required this.monthsSaved,
+    required this.remainingCapitalAfterCents,
+    required this.estimatedEndDate,
+    this.estimatedInterestSavedCents,
+  });
+}
+
+/// Simule l'effet d'un même versement exceptionnel de [extraPaymentCents]
+/// appliqué, tour à tour, à chacun des crédits actifs de [credits] — pour
+/// comparer où ce versement aurait le plus d'impact. BudgetPilot ne choisit
+/// jamais à la place de l'utilisateur : les options sont simplement triées
+/// par impact estimé (un crédit soldé entièrement d'abord, sinon le plus
+/// grand nombre de mensualités gagnées).
+List<CreditRepaymentOption> simulateAcrossActiveCredits({
+  required List<CreditEntity> credits,
+  required int extraPaymentCents,
+}) {
+  const service = CreditCalculationService();
+  final active = service.activeOnly(credits);
+
+  final options = active.map((credit) {
+    final simulation = simulateCreditPrepayment(credit: credit, extraPaymentCents: extraPaymentCents);
+    final fullyRepaid = extraPaymentCents >= credit.remainingCapitalCents;
+    final rate = credit.annualRatePercent;
+    final interestSaved = rate == null
+        ? null
+        : (extraPaymentCents * (rate / 100 / 12) * simulation.monthsSaved).round();
+    return CreditRepaymentOption(
+      credit: credit,
+      wouldBeFullyRepaid: fullyRepaid,
+      monthlyPaymentFreedCents: fullyRepaid ? credit.monthlyPaymentCents : 0,
+      monthsSaved: simulation.monthsSaved,
+      remainingCapitalAfterCents: simulation.remainingCapitalAfterCents,
+      estimatedEndDate: simulation.estimatedEndDate,
+      estimatedInterestSavedCents: interestSaved,
+    );
+  }).toList();
+
+  options.sort((a, b) {
+    if (a.wouldBeFullyRepaid != b.wouldBeFullyRepaid) {
+      return a.wouldBeFullyRepaid ? -1 : 1;
+    }
+    if (a.monthlyPaymentFreedCents != b.monthlyPaymentFreedCents) {
+      return b.monthlyPaymentFreedCents.compareTo(a.monthlyPaymentFreedCents);
+    }
+    return b.monthsSaved.compareTo(a.monthsSaved);
+  });
+
+  return options;
 }
 
 DateTime _subtractMonths(DateTime date, int months) {

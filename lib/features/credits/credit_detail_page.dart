@@ -11,6 +11,9 @@ import '../../core/widgets/euro_amount_field.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import 'credit_form_page.dart';
+import 'credit_visuals.dart';
+
+const _creditCalculationService = CreditCalculationService();
 
 /// Détail d'un crédit : toutes ses informations, simulation de versement
 /// exceptionnel, et actions (modifier, marquer comme terminé / réactiver,
@@ -48,6 +51,10 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
   Widget build(BuildContext context) {
     final credit = widget.credit;
     final colorScheme = Theme.of(context).colorScheme;
+    final color = creditColorFor(credit);
+    final icon = creditIconFor(credit);
+    final stars = _creditCalculationService.priorityStars(credit);
+    final priorityLabel = _creditCalculationService.priorityLabel(credit);
 
     return Scaffold(
       appBar: AppBar(
@@ -65,6 +72,35 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.xl),
           children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
+                  child: Icon(icon, size: 20, color: color),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                if (credit.isActive)
+                  Expanded(
+                    child: Row(
+                      children: [
+                        for (var i = 0; i < 5; i++)
+                          Icon(
+                            i < stars ? Icons.star_rounded : Icons.star_outline_rounded,
+                            size: 16,
+                            color: i < stars ? color : colorScheme.outlineVariant,
+                          ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(priorityLabel, style: Theme.of(context).textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            if (credit.organisme != null && credit.organisme!.isNotEmpty)
+              _DetailRow(label: 'Banque', value: credit.organisme!),
             _DetailRow(label: 'Montant initial', value: formatCentsAsEuro(credit.initialAmountCents)),
             _DetailRow(label: 'Capital restant dû', value: formatCentsAsEuro(credit.remainingCapitalCents)),
             _DetailRow(label: 'Mensualité', value: formatCentsAsEuro(credit.monthlyPaymentCents)),
@@ -101,6 +137,13 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
             const SizedBox(height: AppSpacing.xs),
             Text('${(credit.repaidProgress * 100).round()} % remboursé',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+
+            const Divider(height: AppSpacing.xxxl),
+
+            Text('Historique', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.sm),
+            _DetailRow(label: 'Ajouté le', value: formatDayMonthFr(credit.createdAt)),
+            _DetailRow(label: 'Dernière mise à jour', value: formatDayMonthFr(credit.updatedAt)),
 
             const Divider(height: AppSpacing.xxxl),
 

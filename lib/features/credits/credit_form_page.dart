@@ -8,6 +8,7 @@ import '../../core/widgets/date_picker_field.dart';
 import '../../core/widgets/euro_amount_field.dart';
 import '../../core/widgets/form_actions_row.dart';
 import '../../domain/entities/credit_entity.dart';
+import 'credit_visuals.dart';
 
 /// Formulaire de création / modification d'un crédit. Passer [existing]
 /// pour éditer un crédit existant, sinon un nouveau crédit est créé.
@@ -22,6 +23,7 @@ class CreditFormPage extends ConsumerStatefulWidget {
 class _CreditFormPageState extends ConsumerState<CreditFormPage> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameController;
+  late final TextEditingController _organismeController;
   late final TextEditingController _initialAmountController;
   late final TextEditingController _remainingCapitalController;
   late final TextEditingController _monthlyPaymentController;
@@ -33,6 +35,8 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
   late DateTime _startDate;
   late DateTime _expectedEndDate;
   late bool _earlyRepaymentAllowed;
+  late Color? _selectedColor;
+  late IconData? _selectedIcon;
   bool _saving = false;
 
   bool get _isEditing => widget.existing != null;
@@ -42,6 +46,7 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
     super.initState();
     final existing = widget.existing;
     _nameController = TextEditingController(text: existing?.name ?? '');
+    _organismeController = TextEditingController(text: existing?.organisme ?? '');
     _initialAmountController = TextEditingController(
       text: existing == null ? '' : (existing.initialAmountCents / 100).toStringAsFixed(2),
     );
@@ -66,11 +71,19 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
     _startDate = existing?.startDate ?? DateTime.now();
     _expectedEndDate = existing?.expectedEndDate ?? DateTime.now().add(const Duration(days: 365));
     _earlyRepaymentAllowed = existing?.earlyRepaymentAllowed ?? true;
+    _selectedColor = existing?.colorValue == null ? null : Color(existing!.colorValue!);
+    _selectedIcon = existing?.iconCodePoint == null
+        ? null
+        : creditIconPalette.firstWhere(
+            (icon) => icon.codePoint == existing!.iconCodePoint,
+            orElse: () => creditIconPalette.first,
+          );
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _organismeController.dispose();
     _initialAmountController.dispose();
     _remainingCapitalController.dispose();
     _monthlyPaymentController.dispose();
@@ -95,6 +108,9 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
     final remainingInstallments = int.parse(_remainingInstallmentsController.text.trim());
     final creditType = _creditTypeController.text.trim().isEmpty ? null : _creditTypeController.text.trim();
     final notes = _notesController.text.trim().isEmpty ? null : _notesController.text.trim();
+    final organisme = _organismeController.text.trim().isEmpty ? null : _organismeController.text.trim();
+    final colorValue = _selectedColor?.toARGB32();
+    final iconCodePoint = _selectedIcon?.codePoint;
 
     try {
       if (_isEditing) {
@@ -112,6 +128,9 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
           earlyRepaymentAllowed: _earlyRepaymentAllowed,
           earlyRepaymentPenaltyCents: penaltyCents,
           notes: notes,
+          organisme: organisme,
+          colorValue: colorValue,
+          iconCodePoint: iconCodePoint,
         );
       } else {
         await repository.createCredit(
@@ -127,6 +146,9 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
           earlyRepaymentAllowed: _earlyRepaymentAllowed,
           earlyRepaymentPenaltyCents: penaltyCents,
           notes: notes,
+          organisme: organisme,
+          colorValue: colorValue,
+          iconCodePoint: iconCodePoint,
         );
       }
       if (mounted) Navigator.of(context).pop();
@@ -149,6 +171,11 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Nom (ex : Voiture, Prêt immobilier)'),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Nom requis' : null,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              TextFormField(
+                controller: _organismeController,
+                decoration: const InputDecoration(labelText: 'Organisme (facultatif)'),
               ),
               const SizedBox(height: AppSpacing.lg),
               EuroAmountField(controller: _initialAmountController, label: 'Montant initial emprunté'),
@@ -212,6 +239,38 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
                 ),
               ],
               const SizedBox(height: AppSpacing.lg),
+              Text('Couleur (facultatif)', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  for (final color in creditColorPalette) ...[
+                    _ColorSwatch(
+                      key: ValueKey('credit_color_${color.toARGB32()}'),
+                      color: color,
+                      selected: (_selectedColor ?? creditColorPalette.first) == color,
+                      onTap: () => setState(() => _selectedColor = color),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text('Icône (facultatif)', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  for (final icon in creditIconPalette) ...[
+                    _IconOption(
+                      key: ValueKey('credit_icon_${icon.codePoint}'),
+                      icon: icon,
+                      selected: (_selectedIcon ?? creditIconPalette.first) == icon,
+                      onTap: () => setState(() => _selectedIcon = icon),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                  ],
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
               TextFormField(
                 controller: _notesController,
                 decoration: const InputDecoration(labelText: 'Notes (facultatif)'),
@@ -226,6 +285,59 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ColorSwatch extends StatelessWidget {
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ColorSwatch({super.key, required this.color, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppDurations.fast,
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: selected ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2) : null,
+        ),
+        child: selected ? const Icon(Icons.check_rounded, size: 16, color: Colors.white) : null,
+      ),
+    );
+  }
+}
+
+class _IconOption extends StatelessWidget {
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _IconOption({super.key, required this.icon, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: AppDurations.fast,
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: selected ? CategoryColors.credit.withValues(alpha: 0.2) : colorScheme.surfaceContainerHighest,
+          shape: BoxShape.circle,
+          border: selected ? Border.all(color: CategoryColors.credit, width: 2) : null,
+        ),
+        child: Icon(icon, size: 18, color: selected ? CategoryColors.credit : colorScheme.onSurfaceVariant),
       ),
     );
   }

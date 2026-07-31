@@ -10,6 +10,8 @@ import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import 'credit_detail_page.dart';
 import 'credit_form_page.dart';
+import 'credit_visuals.dart';
+import 'widgets/credit_repayment_simulator_sheet.dart';
 
 const _creditCalculationService = CreditCalculationService();
 
@@ -55,6 +57,12 @@ class _CreditsPageState extends ConsumerState<CreditsPage> {
                 _CreditsSummaryHeader(credits: credits),
                 const SizedBox(height: AppSpacing.lg),
                 _IndicatorsSection(credits: credits),
+                const SizedBox(height: AppSpacing.xl),
+                OutlinedButton.icon(
+                  onPressed: () => showCreditRepaymentSimulatorSheet(context, credits: credits),
+                  icon: const Icon(Icons.calculate_outlined),
+                  label: const Text('Simuler un remboursement'),
+                ),
                 const SizedBox(height: AppSpacing.xl),
                 _SortSelector(
                   selected: _sortMode,
@@ -283,6 +291,10 @@ class _CreditCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final color = creditColorFor(credit);
+    final icon = creditIconFor(credit);
+    final stars = _creditCalculationService.priorityStars(credit);
+    final priorityLabel = _creditCalculationService.priorityLabel(credit);
 
     return Card(
       margin: EdgeInsets.zero,
@@ -296,6 +308,13 @@ class _CreditCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
+                    child: Icon(icon, size: 16, color: color),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(credit.name,
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
@@ -347,9 +366,28 @@ class _CreditCard extends StatelessWidget {
                   value: credit.repaidProgress,
                   minHeight: 6,
                   backgroundColor: colorScheme.surfaceContainerHighest,
-                  color: CategoryColors.credit,
+                  color: color,
                 ),
               ),
+              if (credit.isActive) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    for (var i = 0; i < 5; i++)
+                      Icon(
+                        i < stars ? Icons.star_rounded : Icons.star_outline_rounded,
+                        size: 14,
+                        color: i < stars ? color : colorScheme.outlineVariant,
+                      ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Text(priorityLabel,
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -132,6 +132,19 @@ class Credits extends Table {
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// Nom de la banque / de l'organisme prêteur — purement informatif.
+  TextColumn get organisme => text().nullable()();
+
+  /// Couleur d'accent choisie par l'utilisateur (ARGB), parmi une palette
+  /// prédéfinie — `null` utilise la couleur crédit par défaut du thème.
+  IntColumn get colorValue => integer().nullable()();
+
+  /// `codePoint` d'une icône choisie parmi une palette prédéfinie — `null`
+  /// utilise l'icône par défaut. Toujours résolu contre une liste fermée
+  /// d'IconData référencées en `const` ailleurs dans l'app, pour rester
+  /// compatible avec le tree-shaking des icônes en build release.
+  IntColumn get iconCodePoint => integer().nullable()();
 }
 
 @DriftDatabase(tables: [
@@ -152,7 +165,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -161,8 +174,20 @@ class AppDatabase extends _$AppDatabase {
           if (from < 2) {
             await m.addColumn(budgetCycles, budgetCycles.name);
           }
-          if (from < 3) {
+          // `createTable` matérialise la table telle que définie par la
+          // classe Dart *actuelle* — donc déjà avec organisme/colorValue/
+          // iconCodePoint si `credits` n'existait pas encore. Les
+          // `addColumn` de la branche v4 ne doivent s'appliquer qu'aux bases
+          // où la table `credits` existait déjà (upgrade v3 -> v4) ; sinon
+          // ces colonnes existent déjà et `addColumn` échouerait (doublon).
+          final createdCreditsTable = from < 3;
+          if (createdCreditsTable) {
             await m.createTable(credits);
+          }
+          if (from < 4 && !createdCreditsTable) {
+            await m.addColumn(credits, credits.organisme);
+            await m.addColumn(credits, credits.colorValue);
+            await m.addColumn(credits, credits.iconCodePoint);
           }
         },
       );

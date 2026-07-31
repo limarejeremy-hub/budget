@@ -62,9 +62,10 @@ fichier, sur l'appareil. C'est pourquoi la fonction de sauvegarde manuelle
   (avant l'ajout de la colonne `BudgetCycles.name`) migre vers le schéma
   actuel sans perdre aucune donnée existante.
 - `test/data/credit_migration_test.dart` vérifie qu'une base simulant le
-  schéma v2 (avant l'ajout de la table `Credits`) migre vers v3 sans perdre
-  aucune donnée existante, et que la table crédits est utilisable après
-  migration.
+  schéma v2 (avant l'ajout de la table `Credits`) migre vers le schéma
+  courant sans perdre aucune donnée existante, et qu'une base simulant le
+  schéma v3 (avant l'ajout des colonnes organisme/couleur/icône) migre vers
+  v4 sans perdre les crédits déjà enregistrés.
 
 ## ❌ Les données PEUVENT être perdues quand…
 

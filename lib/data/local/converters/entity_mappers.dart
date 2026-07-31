@@ -91,4 +91,7 @@ CreditEntity creditFromRow(Credit row) => CreditEntity(
       isActive: row.isActive,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      organisme: row.organisme,
+      colorValue: row.colorValue,
+      iconCodePoint: row.iconCodePoint,
     );

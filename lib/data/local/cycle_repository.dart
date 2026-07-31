@@ -390,6 +390,9 @@ class CycleRepository {
     bool earlyRepaymentAllowed = true,
     int? earlyRepaymentPenaltyCents,
     String? notes,
+    String? organisme,
+    int? colorValue,
+    int? iconCodePoint,
   }) {
     return db.into(db.credits).insert(CreditsCompanion.insert(
           name: name,
@@ -404,6 +407,9 @@ class CycleRepository {
           earlyRepaymentAllowed: Value(earlyRepaymentAllowed),
           earlyRepaymentPenaltyCents: Value(earlyRepaymentPenaltyCents),
           notes: Value(notes),
+          organisme: Value(organisme),
+          colorValue: Value(colorValue),
+          iconCodePoint: Value(iconCodePoint),
         ));
   }
 
@@ -421,6 +427,9 @@ class CycleRepository {
     required bool earlyRepaymentAllowed,
     int? earlyRepaymentPenaltyCents,
     String? notes,
+    String? organisme,
+    int? colorValue,
+    int? iconCodePoint,
   }) {
     return (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
       name: Value(name),
@@ -435,6 +444,9 @@ class CycleRepository {
       earlyRepaymentAllowed: Value(earlyRepaymentAllowed),
       earlyRepaymentPenaltyCents: Value(earlyRepaymentPenaltyCents),
       notes: Value(notes),
+      organisme: Value(organisme),
+      colorValue: Value(colorValue),
+      iconCodePoint: Value(iconCodePoint),
       updatedAt: Value(DateTime.now()),
     ));
   }
@@ -549,6 +561,9 @@ class CycleRepository {
             'earlyRepaymentPenaltyCents': c.earlyRepaymentPenaltyCents,
             'notes': c.notes,
             'isActive': c.isActive,
+            'organisme': c.organisme,
+            'colorValue': c.colorValue,
+            'iconCodePoint': c.iconCodePoint,
           },
       ],
     };
@@ -686,6 +701,11 @@ class CycleRepository {
               earlyRepaymentPenaltyCents: Value(c['earlyRepaymentPenaltyCents'] as int?),
               notes: Value(c['notes'] as String?),
               isActive: Value(c['isActive'] as bool? ?? true),
+              // Absents dans les sauvegardes antérieures à cette version :
+              // toujours `null` par défaut, sans erreur.
+              organisme: Value(c['organisme'] as String?),
+              colorValue: Value(c['colorValue'] as int?),
+              iconCodePoint: Value(c['iconCodePoint'] as int?),
             ));
       }
 

@@ -29,6 +29,9 @@ void main() {
       earlyRepaymentAllowed: true,
       earlyRepaymentPenaltyCents: 5000,
       notes: 'Prêt concessionnaire',
+      organisme: 'Crédit Agricole',
+      colorValue: 0xFF4C8DFF,
+      iconCodePoint: 0xe1b1,
     );
 
     final credits = await repository.loadCredits();
@@ -44,6 +47,9 @@ void main() {
     expect(credit.earlyRepaymentPenaltyCents, 5000);
     expect(credit.notes, 'Prêt concessionnaire');
     expect(credit.isActive, isTrue);
+    expect(credit.organisme, 'Crédit Agricole');
+    expect(credit.colorValue, 0xFF4C8DFF);
+    expect(credit.iconCodePoint, 0xe1b1);
   });
 
   test('createCredit sans taux ni date de début laisse ces champs à null', () async {
@@ -59,6 +65,9 @@ void main() {
     final credit = (await repository.loadCredits()).single;
     expect(credit.annualRatePercent, isNull);
     expect(credit.startDate, isNull);
+    expect(credit.organisme, isNull);
+    expect(credit.colorValue, isNull);
+    expect(credit.iconCodePoint, isNull);
   });
 
   test('updateCredit modifie un crédit existant', () async {
@@ -80,12 +89,18 @@ void main() {
       expectedEndDate: DateTime(2028, 1, 1),
       remainingInstallments: 24,
       earlyRepaymentAllowed: true,
+      organisme: 'Société Générale',
+      colorValue: 0xFF3FBE7A,
+      iconCodePoint: 0xe531,
     );
 
     final credit = (await repository.loadCredits()).single;
     expect(credit.name, 'Voiture (soldée en partie)');
     expect(credit.remainingCapitalCents, 600000);
     expect(credit.remainingInstallments, 24);
+    expect(credit.organisme, 'Société Générale');
+    expect(credit.colorValue, 0xFF3FBE7A);
+    expect(credit.iconCodePoint, 0xe531);
   });
 
   test('deleteCredit supprime le crédit', () async {

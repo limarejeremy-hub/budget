@@ -147,4 +147,67 @@ void main() {
       expect(result.estimatedEndDate, montre.expectedEndDate);
     });
   });
+
+  group('priorité automatique (étoiles)', () {
+    final samsungFold =
+        _credit(id: 5, name: 'Samsung Fold', remainingCapitalCents: 32000, remainingInstallments: 4);
+
+    test('moins de 6 mensualités restantes => 5 étoiles, "Priorité maximale"', () {
+      expect(service.priorityStars(samsungFold), 5);
+      expect(service.priorityLabel(samsungFold), 'Priorité maximale');
+    });
+
+    test('entre 6 et 24 mensualités restantes (bornes incluses) => 3 étoiles, "Priorité moyenne"', () {
+      expect(service.priorityStars(montre), 3); // 8 mensualités
+      expect(service.priorityLabel(montre), 'Priorité moyenne');
+      final atLowerBound = _credit(id: 6, name: 'Bord bas', remainingInstallments: 6);
+      final atUpperBound = _credit(id: 7, name: 'Bord haut', remainingInstallments: 24);
+      expect(service.priorityStars(atLowerBound), 3);
+      expect(service.priorityStars(atUpperBound), 3);
+    });
+
+    test('plus de 24 mensualités restantes => 1 étoile, "Long terme"', () {
+      expect(service.priorityStars(voiture), 1); // 36 mensualités
+      expect(service.priorityLabel(voiture), 'Long terme');
+      expect(service.priorityStars(immobilier), 1); // 220 mensualités
+    });
+  });
+
+  group('simulateAcrossActiveCredits', () {
+    test('propose de terminer un crédit quand le versement couvre son capital restant', () {
+      final options = simulateAcrossActiveCredits(credits: [voiture, montre, immobilier], extraPaymentCents: 40000);
+      final montreOption = options.firstWhere((o) => o.credit.name == 'Montre');
+      expect(montreOption.wouldBeFullyRepaid, isTrue);
+      expect(montreOption.monthlyPaymentFreedCents, montre.monthlyPaymentCents);
+    });
+
+    test('trie les options soldées entièrement en premier', () {
+      final options = simulateAcrossActiveCredits(credits: [voiture, montre, immobilier], extraPaymentCents: 40000);
+      expect(options.first.credit.name, 'Montre');
+      expect(options.first.wouldBeFullyRepaid, isTrue);
+    });
+
+    test('ignore les crédits terminés (isActive = false)', () {
+      final options = simulateAcrossActiveCredits(credits: credits, extraPaymentCents: 10000);
+      expect(options.any((o) => o.credit.name == 'Ancien crédit remboursé'), isFalse);
+    });
+
+    test('estime une économie d\'intérêts seulement si un taux est renseigné', () {
+      // Voiture (taux 3,5 %) : versement de 200000, capital 900000 -> 700000
+      // restant -> mensualités 28 au lieu de 36 -> 8 mois gagnés -> une
+      // économie d'intérêts strictement positive est estimée.
+      final options = simulateAcrossActiveCredits(credits: [voiture, montre], extraPaymentCents: 200000);
+      final voitureOption = options.firstWhere((o) => o.credit.name == 'Voiture');
+      final montreOption = options.firstWhere((o) => o.credit.name == 'Montre');
+      expect(voitureOption.estimatedInterestSavedCents, isNotNull);
+      expect(voitureOption.estimatedInterestSavedCents, greaterThan(0));
+      expect(montreOption.estimatedInterestSavedCents, isNull); // pas de taux renseigné
+    });
+
+    test('un versement partiel ne solde pas le crédit mais réduit son capital restant', () {
+      final options = simulateAcrossActiveCredits(credits: [immobilier], extraPaymentCents: 500000);
+      expect(options.single.wouldBeFullyRepaid, isFalse);
+      expect(options.single.remainingCapitalAfterCents, immobilier.remainingCapitalCents - 500000);
+    });
+  });
 }

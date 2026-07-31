@@ -18,6 +18,9 @@ class CreditEntity {
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? organisme;
+  final int? colorValue;
+  final int? iconCodePoint;
 
   const CreditEntity({
     required this.id,
@@ -36,6 +39,9 @@ class CreditEntity {
     this.isActive = true,
     required this.createdAt,
     required this.updatedAt,
+    this.organisme,
+    this.colorValue,
+    this.iconCodePoint,
   });
 
   /// Part déjà remboursée du capital initial, entre 0.0 et 1.0.

@@ -8,6 +8,7 @@ import 'package:budgetpilot/core/providers/database_provider.dart';
 import 'package:budgetpilot/data/local/cycle_repository.dart';
 import 'package:budgetpilot/data/local/database.dart';
 import 'package:budgetpilot/features/credits/credit_form_page.dart';
+import 'package:budgetpilot/features/credits/credit_visuals.dart';
 
 void main() {
   late AppDatabase db;
@@ -94,5 +95,33 @@ void main() {
     await tester.pump();
 
     expect(find.text('Taux invalide'), findsOneWidget);
+  });
+
+  testWidgets("l'organisme, la couleur et l'icône choisis sont bien enregistrés", (tester) async {
+    useTallViewport(tester);
+    await tester.pumpWidget(wrap(const CreditFormPage()));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Nom (ex : Voiture, Prêt immobilier)'), 'Voiture');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Organisme (facultatif)'), 'Boursorama');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Montant initial emprunté'), '15000');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Capital restant dû'), '9000');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Mensualité'), '250');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Mensualités restantes'), '36');
+
+    final secondColor = creditColorPalette[1];
+    final secondIcon = creditIconPalette[1];
+    await tester.tap(find.byKey(ValueKey('credit_color_${secondColor.toARGB32()}')));
+    await tester.tap(find.byKey(ValueKey('credit_icon_${secondIcon.codePoint}')));
+    await tester.pump();
+
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pumpAndSettle();
+
+    final credit = (await repository.loadCredits()).single;
+    expect(credit.organisme, 'Boursorama');
+    expect(credit.colorValue, secondColor.toARGB32());
+    expect(credit.iconCodePoint, secondIcon.codePoint);
   });
 }
