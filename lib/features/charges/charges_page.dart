@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/entries_providers.dart';
@@ -72,6 +73,18 @@ class _ChargeTile extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(formatCentsAsEuro(charge.effectiveAmountCents)),
+          PopupMenuButton<String>(
+            tooltip: 'Changer le statut',
+            icon: const Icon(Icons.more_vert),
+            onSelected: (status) =>
+                ref.read(cycleRepositoryProvider).updateFixedExpenseStatus(charge.id, status),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: ChargeStatus.prelevee, child: Text('Marquer prélevée')),
+              PopupMenuItem(value: ChargeStatus.suspendue, child: Text('Suspendre')),
+              PopupMenuItem(value: ChargeStatus.incident, child: Text('Signaler un incident')),
+              PopupMenuItem(value: ChargeStatus.aVenir, child: Text('Réinitialiser (auto)')),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: 'Supprimer',

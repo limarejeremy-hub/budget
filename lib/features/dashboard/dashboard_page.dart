@@ -12,8 +12,12 @@ import '../../domain/entities/fixed_expense_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import '../charges/charges_page.dart';
 import '../cycle/cycle_creation_page.dart';
+import '../cycle/cycle_detail_page.dart';
+import '../entries/fixed_expense_form_page.dart';
 import '../entries/incomes_list_page.dart';
 import '../entries/savings_list_page.dart';
+import '../expenses/variable_expenses_page.dart';
+import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -119,7 +123,7 @@ class _DashboardContent extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(
               horizontalPadding, AppSpacing.lg, horizontalPadding, 100),
           children: [
-            const _DashboardHeader(),
+            _DashboardHeader(cycleId: data.cycleId),
             const SizedBox(height: AppSpacing.xxl),
             _ArgentLibreCard(data: data),
             const SizedBox(height: AppSpacing.xxl),
@@ -140,7 +144,8 @@ class _DashboardContent extends StatelessWidget {
 }
 
 class _DashboardHeader extends StatelessWidget {
-  const _DashboardHeader();
+  final int cycleId;
+  const _DashboardHeader({required this.cycleId});
 
   @override
   Widget build(BuildContext context) {
@@ -170,10 +175,10 @@ class _DashboardHeader extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.sm),
         IconButton.filledTonal(
-          tooltip: 'Notifications',
-          onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Aucune nouvelle notification')),
-          ),
+          tooltip: 'Éléments à surveiller',
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => WatchlistPage(cycleId: cycleId),
+          )),
           icon: const Icon(Icons.notifications_none_rounded),
         ),
       ],
@@ -182,7 +187,8 @@ class _DashboardHeader extends StatelessWidget {
 }
 
 /// Grande carte "Argent Libre" — dégradé or premium construit entièrement
-/// en widgets Flutter (aucune image), badge de situation dynamique.
+/// en widgets Flutter (aucune image), badge de situation dynamique, reflet
+/// subtil. Cliquable : ouvre le détail complet du cycle.
 class _ArgentLibreCard extends StatelessWidget {
   final DashboardViewData data;
   const _ArgentLibreCard({required this.data});
@@ -192,12 +198,12 @@ class _ArgentLibreCard extends StatelessWidget {
     final brightness = Theme.of(context).brightness;
     final statusColor = AppTheme.colorForRemainingRatio(data.remainingRatio);
     final statusLabel = AppTheme.statusLabelForRemainingRatio(data.remainingRatio);
+    final statusIcon = AppTheme.statusIconForRemainingRatio(data.remainingRatio);
     final accent = GoldGradient.accentForBrightness(brightness);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadii.xl),
         gradient: LinearGradient(
@@ -207,64 +213,110 @@ class _ArgentLibreCard extends StatelessWidget {
         ),
         boxShadow: AppShadows.card(brightness),
       ),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(
-                'ARGENT LIBRE',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelLarge
-                    ?.copyWith(letterSpacing: 3, color: accent, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  formatCentsAsEuro(data.realRemainingCents),
-                  style: Theme.of(context)
-                      .textTheme
-                      .displayMedium
-                      ?.copyWith(fontWeight: FontWeight.bold, color: accent),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => CycleDetailPage(data: data),
+          )),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
+            child: Stack(
+              children: [
+                // Reflet subtil : bande diagonale semi-transparente en haut de
+                // la carte, pour un effet premium sans image.
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: FractionallySizedBox(
+                        widthFactor: 1,
+                        heightFactor: 0.45,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(AppRadii.xl),
+                              topRight: Radius.circular(AppRadii.xl),
+                            ),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.white.withValues(alpha: brightness == Brightness.dark ? 0.06 : 0.35),
+                                Colors.white.withValues(alpha: 0),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(AppRadii.sm),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'ARGENT LIBRE',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelLarge
+                          ?.copyWith(letterSpacing: 3, color: accent, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        formatCentsAsEuro(data.realRemainingCents),
+                        style: Theme.of(context)
+                            .textTheme
+                            .displayMedium
+                            ?.copyWith(fontWeight: FontWeight.bold, color: accent),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(AppRadii.sm),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(statusIcon, size: 15, color: statusColor),
+                          const SizedBox(width: AppSpacing.xs),
+                          Text(
+                            statusLabel,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelMedium
+                                ?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Text(
+                      "Disponible jusqu'au ${formatDayMonthFr(data.cycleEnd)}",
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: accent.withValues(alpha: 0.85)),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  statusLabel,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: Icon(Icons.workspace_premium_rounded,
+                      size: 22, color: accent.withValues(alpha: 0.55)),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Text(
-                "Disponible jusqu'au ${formatDayMonthFr(data.cycleEnd)}",
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: accent.withValues(alpha: 0.85)),
-              ),
-            ],
-          ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: Opacity(
-              opacity: 0.55,
-              child: Text('👑', style: TextStyle(fontSize: 22, color: accent)),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -293,6 +345,9 @@ class _CycleSummaryGrid extends StatelessWidget {
         cents: data.totalFixedExpensesCents,
         icon: Icons.receipt_long_rounded,
         color: CategoryColors.fixedExpense,
+        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
+          builder: (_) => const ChargesPage(),
+        )),
       ),
       _SummaryItem(
         label: 'Dépenses',
@@ -300,6 +355,9 @@ class _CycleSummaryGrid extends StatelessWidget {
         cents: data.totalVariableExpensesCents,
         icon: Icons.shopping_bag_rounded,
         color: CategoryColors.variableExpense,
+        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
+          builder: (_) => const VariableExpensesPage(),
+        )),
       ),
       _SummaryItem(
         label: 'Épargnes',
@@ -334,7 +392,7 @@ class _SummaryItem {
   final int cents;
   final IconData icon;
   final Color color;
-  final void Function(BuildContext context)? onTap;
+  final void Function(BuildContext context) onTap;
 
   const _SummaryItem({
     required this.label,
@@ -342,7 +400,7 @@ class _SummaryItem {
     required this.cents,
     required this.icon,
     required this.color,
-    this.onTap,
+    required this.onTap,
   });
 }
 
@@ -355,58 +413,56 @@ class _SummaryTile extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    final content = Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(AppRadii.md),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: item.color.withValues(alpha: 0.18), shape: BoxShape.circle),
-            child: Icon(item.icon, color: item.color, size: 18),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(item.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-                Text(formatCentsAsEuro(item.cents),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                Text(item.subtext,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (item.onTap == null) return content;
-    return InkWell(
+    return Material(
+      color: colorScheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(AppRadii.md),
-      onTap: () => item.onTap!(context),
-      child: content,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        onTap: () => item.onTap(context),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration:
+                    BoxDecoration(color: item.color.withValues(alpha: 0.18), shape: BoxShape.circle),
+                child: Icon(item.icon, color: item.color, size: 18),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(item.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+                    Text(formatCentsAsEuro(item.cents),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(item.subtext,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Section "Prochaines échéances" — remplace l'ancienne section "À
-/// surveiller" par un affichage direct des 3 prochaines charges fixes non
-/// confirmées, avec accès à la liste complète.
+/// Section "Prochaines échéances" — affiche directement les 3 prochaines
+/// charges fixes non confirmées, chaque ligne ouvrant le détail de la
+/// charge correspondante, avec accès à la liste complète.
 class _UpcomingChargesSection extends StatelessWidget {
   final DashboardViewData data;
   const _UpcomingChargesSection({required this.data});
@@ -417,26 +473,31 @@ class _UpcomingChargesSection extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Prochaines échéances', style: Theme.of(context).textTheme.titleMedium),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const ChargesPage(),
-                  )),
-                  child: const Text('Voir toutes'),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: Row(
+                children: [
+                  Expanded(
+                    child:
+                        Text('Prochaines échéances', style: Theme.of(context).textTheme.titleMedium),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const ChargesPage(),
+                    )),
+                    child: const Text('Voir toutes'),
+                  ),
+                ],
+              ),
             ),
             if (data.upcomingCharges.isEmpty)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                padding:
+                    const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.md, AppSpacing.xl, AppSpacing.md),
                 child: Row(
                   children: [
                     Icon(Icons.task_alt_rounded, color: colorScheme.onSurfaceVariant, size: 20),
@@ -444,15 +505,18 @@ class _UpcomingChargesSection extends StatelessWidget {
                     Expanded(
                       child: Text(
                         'Aucune échéance à venir',
-                        style:
-                            Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(color: colorScheme.onSurfaceVariant),
                       ),
                     ),
                   ],
                 ),
               )
             else
-              for (final charge in data.upcomingCharges) _UpcomingChargeTile(charge: charge),
+              for (final charge in data.upcomingCharges)
+                _UpcomingChargeTile(charge: charge, cycleId: data.cycleId),
           ],
         ),
       ),
@@ -462,42 +526,50 @@ class _UpcomingChargesSection extends StatelessWidget {
 
 class _UpcomingChargeTile extends StatelessWidget {
   final FixedExpenseEntity charge;
-  const _UpcomingChargeTile({required this.charge});
+  final int cycleId;
+  const _UpcomingChargeTile({required this.charge, required this.cycleId});
 
   @override
   Widget build(BuildContext context) {
     final presentation = ChargeStatusPresentation.of(charge.status, context);
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-      child: Row(
-        children: [
-          Icon(presentation.icon, size: 18, color: presentation.color),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(charge.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: colorScheme.onSurfaceVariant)),
-              ],
+    return InkWell(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => FixedExpenseFormPage(cycleId: cycleId, existing: charge),
+      )),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.sm),
+        child: Row(
+          children: [
+            Icon(presentation.icon, size: 18, color: presentation.color),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(charge.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Text(formatCentsAsEuro(charge.effectiveAmountCents),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-        ],
+            const SizedBox(width: AppSpacing.sm),
+            Text(formatCentsAsEuro(charge.effectiveAmountCents),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(width: AppSpacing.xs),
+            Icon(Icons.chevron_right_rounded, size: 18, color: colorScheme.onSurfaceVariant),
+          ],
+        ),
       ),
     );
   }

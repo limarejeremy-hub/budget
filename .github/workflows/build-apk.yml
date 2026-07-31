@@ -26,6 +26,26 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Préparer la signature de release
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.jks
+            {
+              echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+              echo "keyPassword=$ANDROID_KEY_PASSWORD"
+              echo "keyAlias=$ANDROID_KEY_ALIAS"
+              echo "storeFile=release.jks"
+            } > android/key.properties
+            echo "Signature de release configurée (keystore dédié)."
+          else
+            echo "Aucun secret de signature configuré — build signé avec la clé debug."
+          fi
+
       - name: Récupérer les dépendances
         run: flutter pub get
 

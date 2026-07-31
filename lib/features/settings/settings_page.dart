@@ -1,14 +1,20 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/database_provider.dart';
+import '../../data/local/cycle_repository.dart';
 import '../../data/local/demo_data_seeder.dart';
 
-/// Onglet "Paramètres" — minimal pour cette version. Un menu développeur
-/// caché (7 appuis sur le numéro de version) donne accès au jeu de données
-/// de démonstration, uniquement utile pour les tests, jamais dans le
-/// parcours normal.
+/// Onglet "Paramètres". Contient la sauvegarde locale (export/import JSON)
+/// et un menu développeur caché (7 appuis sur le numéro de version) donnant
+/// accès au jeu de données de démonstration, uniquement utile pour les
+/// tests, jamais dans le parcours normal.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -19,12 +25,137 @@ class SettingsPage extends ConsumerStatefulWidget {
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   int _versionTapCount = 0;
   bool _devMenuUnlocked = false;
+  bool _backupBusy = false;
 
   void _onVersionTap() {
     setState(() {
       _versionTapCount++;
       if (_versionTapCount >= 7) _devMenuUnlocked = true;
     });
+  }
+
+  Future<void> _exportBackup() async {
+    setState(() => _backupBusy = true);
+    try {
+      final repository = ref.read(cycleRepositoryProvider);
+      final data = await repository.exportBackup();
+      final jsonString = const JsonEncoder.withIndent('  ').convert(data);
+      final bytes = Uint8List.fromList(utf8.encode(jsonString));
+      final timestamp = DateTime.now().toIso8601String().replaceAll(RegExp(r'[:.]'), '-');
+
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Exporter la sauvegarde BudgetPilot',
+        fileName: 'budgetpilot-backup-$timestamp.json',
+        bytes: bytes,
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+
+      if (!mounted) return;
+      if (savedPath == null) {
+        _showSnackBar('Export annulé');
+      } else {
+        _showSnackBar('Sauvegarde exportée');
+      }
+    } catch (e) {
+      if (mounted) _showSnackBar("Échec de l'export : $e");
+    } finally {
+      if (mounted) setState(() => _backupBusy = false);
+    }
+  }
+
+  Future<void> _importBackup() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Importer une sauvegarde BudgetPilot',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final bytes = result.files.single.bytes;
+    if (bytes == null) {
+      _showSnackBar('Impossible de lire le fichier sélectionné');
+      return;
+    }
+
+    final repository = ref.read(cycleRepositoryProvider);
+    Object? decoded;
+    try {
+      decoded = jsonDecode(utf8.decode(bytes));
+      repository.validateBackup(decoded);
+    } on FormatException {
+      if (mounted) _showValidationError("Ce fichier n'est pas un JSON valide.");
+      return;
+    } on BackupValidationException catch (e) {
+      if (mounted) _showValidationError(e.message);
+      return;
+    }
+
+    if (!mounted) return;
+    final replace = await _askReplaceOrMerge();
+    if (replace == null) return; // annulé
+
+    setState(() => _backupBusy = true);
+    try {
+      final count =
+          await repository.importBackup(decoded! as Map<String, dynamic>, replaceExisting: replace);
+      if (mounted) {
+        _showSnackBar(
+            '$count cycle${count > 1 ? 's' : ''} importé${count > 1 ? 's' : ''} (${replace ? 'remplacement' : 'fusion'})');
+      }
+    } catch (e) {
+      if (mounted) _showSnackBar("Échec de l'import : $e");
+    } finally {
+      if (mounted) setState(() => _backupBusy = false);
+    }
+  }
+
+  void _showValidationError(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sauvegarde invalide'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fermer')),
+        ],
+      ),
+    );
+  }
+
+  /// Renvoie `true` pour remplacer, `false` pour fusionner, `null` si annulé.
+  Future<bool?> _askReplaceOrMerge() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Importer la sauvegarde'),
+        content: const Text(
+          'Fusionner ajoute les cycles importés à vos données actuelles.\n\n'
+          'Remplacer supprime définitivement toutes vos données actuelles avant '
+          "d'importer la sauvegarde.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Fusionner'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Remplacer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -45,10 +176,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               subtitle: Text('Français (France)'),
             ),
             const Divider(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Sauvegarde', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_upload_outlined),
+              title: const Text('Exporter une sauvegarde'),
+              subtitle: const Text('Fichier JSON local — cycles, revenus, charges, dépenses, épargnes'),
+              enabled: !_backupBusy,
+              onTap: _exportBackup,
+            ),
+            ListTile(
+              leading: const Icon(Icons.file_download_outlined),
+              title: const Text('Importer une sauvegarde'),
+              subtitle: const Text('Fusion ou remplacement, avec confirmation'),
+              enabled: !_backupBusy,
+              onTap: _importBackup,
+            ),
+            const Divider(),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 0.1.0'),
+              subtitle: const Text('Version 0.4.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[

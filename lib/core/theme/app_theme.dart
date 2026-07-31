@@ -70,4 +70,11 @@ class AppTheme {
     if (ratio < 0.20) return 'À surveiller';
     return 'Situation confortable';
   }
+
+  /// Icône du badge de situation — mêmes seuils que [colorForRemainingRatio].
+  static IconData statusIconForRemainingRatio(double ratio) {
+    if (ratio < 0.05) return Icons.error_rounded;
+    if (ratio < 0.20) return Icons.warning_rounded;
+    return Icons.check_circle_rounded;
+  }
 }
