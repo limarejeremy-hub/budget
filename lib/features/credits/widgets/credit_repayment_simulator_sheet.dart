@@ -150,7 +150,7 @@ class _OptionCard extends StatelessWidget {
             _CheckLine("économie d'intérêts estimée : ${formatCentsAsEuro(option.estimatedInterestSavedCents!)}"),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            'Estimation simplifiée, hors intérêts composés et pénalités.',
+            'Estimation simplifiée — hors intérêts, hors assurance, hors pénalités.',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
           ),
         ],

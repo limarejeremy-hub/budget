@@ -91,6 +91,10 @@ void main() {
     expect(service.lowestRemainingCapitalCredit(credits)?.name, 'Montre');
   });
 
+  test('identifie le crédit actif au capital restant le plus élevé', () {
+    expect(service.highestRemainingCapitalCredit(credits)?.name, 'Immobilier');
+  });
+
   test('identifie le crédit actif à la mensualité la plus élevée', () {
     expect(service.highestMonthlyPaymentCredit(credits)?.name, 'Immobilier');
   });
@@ -170,6 +174,36 @@ void main() {
       expect(service.priorityStars(voiture), 1); // 36 mensualités
       expect(service.priorityLabel(voiture), 'Long terme');
       expect(service.priorityStars(immobilier), 1); // 220 mensualités
+    });
+  });
+
+  group('score visuel automatique (CreditPace)', () {
+    test('moins de 12 mensualités restantes => veryClose, "Très proche de la fin"', () {
+      final samsungFold =
+          _credit(id: 8, name: 'Samsung Fold', remainingInstallments: 4);
+      expect(service.creditPace(samsungFold), CreditPace.veryClose);
+      expect(service.creditPaceLabel(samsungFold), 'Très proche de la fin');
+    });
+
+    test('12 à 47 mensualités restantes => medium, "Moyen terme"', () {
+      final atLowerBound = _credit(id: 9, name: 'Bord bas', remainingInstallments: 12);
+      final atUpperBound = _credit(id: 10, name: 'Bord haut', remainingInstallments: 47);
+      expect(service.creditPace(atLowerBound), CreditPace.medium);
+      expect(service.creditPace(atUpperBound), CreditPace.medium);
+      expect(service.creditPaceLabel(atLowerBound), 'Moyen terme');
+    });
+
+    test('48 à 119 mensualités restantes => long, "Long terme"', () {
+      final atLowerBound = _credit(id: 11, name: 'Bord bas', remainingInstallments: 48);
+      final atUpperBound = _credit(id: 12, name: 'Bord haut', remainingInstallments: 119);
+      expect(service.creditPace(atLowerBound), CreditPace.long);
+      expect(service.creditPace(atUpperBound), CreditPace.long);
+      expect(service.creditPaceLabel(atLowerBound), 'Long terme');
+    });
+
+    test('120 mensualités restantes ou plus => veryLong, "Très longue durée"', () {
+      expect(service.creditPace(immobilier), CreditPace.veryLong); // 220 mensualités
+      expect(service.creditPaceLabel(immobilier), 'Très longue durée');
     });
   });
 

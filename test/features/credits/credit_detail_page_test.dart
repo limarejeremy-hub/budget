@@ -91,8 +91,12 @@ void main() {
     expect(find.text('Long terme'), findsOneWidget);
   });
 
-  testWidgets('le simulateur de versement exceptionnel fonctionne toujours', (tester) async {
+  testWidgets('le simulateur de versement exceptionnel affiche le nouveau format', (tester) async {
     useTallViewport(tester);
+    // Voiture : capital restant 900000, mensualité 25000, 36 mensualités,
+    // fin prévue janvier 2029. Versement de 1000 € (100000 cents) ->
+    // capital restant 800000, 32 mensualités théoriques -> 4 mois gagnés
+    // -> nouvelle fin septembre 2028.
     await tester.pumpWidget(wrap(buildCredit()));
     await tester.pumpAndSettle();
 
@@ -100,7 +104,20 @@ void main() {
     await tester.tap(find.text('Simuler'));
     await tester.pump();
 
-    expect(find.text('Capital restant après versement'), findsOneWidget);
+    expect(find.text('Après un remboursement exceptionnel de :'), findsOneWidget);
+    expect(find.text('Capital restant'), findsOneWidget);
+    expect(find.text('Gain estimé'), findsOneWidget);
+    expect(find.text('4 mensualités'), findsOneWidget);
+    expect(find.text('Nouvelle fin'), findsOneWidget);
+    expect(find.text('septembre 2028'), findsOneWidget);
+    expect(find.text('Mensualité toujours'), findsOneWidget);
+    expect(find.text('Tu économiserais environ'), findsOneWidget);
+    expect(find.text('4 mois'), findsOneWidget);
+    expect(find.text('Excellent choix.'), findsOneWidget);
+    expect(
+      find.text('Estimation simplifiée — hors intérêts, hors assurance, hors pénalités.'),
+      findsWidgets,
+    );
   });
 
   testWidgets('"Marquer comme terminé" bascule bien le statut actif du crédit', (tester) async {

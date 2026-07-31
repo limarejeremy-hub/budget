@@ -32,6 +32,13 @@ class CreditCalculationService {
     return active.reduce((a, b) => a.remainingCapitalCents <= b.remainingCapitalCents ? a : b);
   }
 
+  /// Le crédit actif au capital restant dû le plus élevé.
+  CreditEntity? highestRemainingCapitalCredit(List<CreditEntity> credits) {
+    final active = activeOnly(credits);
+    if (active.isEmpty) return null;
+    return active.reduce((a, b) => a.remainingCapitalCents >= b.remainingCapitalCents ? a : b);
+  }
+
   /// Le crédit actif à la mensualité la plus élevée.
   CreditEntity? highestMonthlyPaymentCredit(List<CreditEntity> credits) {
     final active = activeOnly(credits);
@@ -93,7 +100,37 @@ class CreditCalculationService {
     if (stars == 3) return 'Priorité moyenne';
     return 'Long terme';
   }
+
+  /// Score visuel automatique d'un crédit, basé sur ses mensualités
+  /// restantes — un indicateur distinct de [priorityStars], à l'échelle
+  /// différente (utile pour repérer d'un coup d'œil les crédits de très
+  /// longue durée, comme un prêt immobilier).
+  CreditPace creditPace(CreditEntity credit) {
+    final months = credit.remainingInstallments;
+    if (months < 12) return CreditPace.veryClose;
+    if (months < 48) return CreditPace.medium;
+    if (months < 120) return CreditPace.long;
+    return CreditPace.veryLong;
+  }
+
+  /// Libellé associé à [creditPace].
+  String creditPaceLabel(CreditEntity credit) {
+    switch (creditPace(credit)) {
+      case CreditPace.veryClose:
+        return 'Très proche de la fin';
+      case CreditPace.medium:
+        return 'Moyen terme';
+      case CreditPace.long:
+        return 'Long terme';
+      case CreditPace.veryLong:
+        return 'Très longue durée';
+    }
+  }
 }
+
+/// Statut visuel automatique d'un crédit selon ses mensualités restantes :
+/// moins de 12 mois, entre 12 et 48, entre 48 et 120, au-delà de 120.
+enum CreditPace { veryClose, medium, long, veryLong }
 
 /// Résultat d'une simulation de versement exceptionnel — toujours une
 /// estimation simplifiée (capital linéaire / mensualité, hors intérêts et

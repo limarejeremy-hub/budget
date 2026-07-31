@@ -111,4 +111,80 @@ void main() {
     expect(find.textContaining('Terminer Samsung Fold'), findsOneWidget);
     expect(find.textContaining('récupération de'), findsOneWidget);
   });
+
+  testWidgets('affiche les indicateurs sous forme de cartes premium', (tester) async {
+    useTallViewport(tester);
+    await repository.createCredit(
+      name: 'Test',
+      initialAmountCents: 80000,
+      remainingCapitalCents: 80000,
+      monthlyPaymentCents: 20000,
+      expectedEndDate: DateTime(2027, 1, 1),
+      remainingInstallments: 4,
+    );
+    await repository.createCredit(
+      name: 'Maison',
+      initialAmountCents: 20000000,
+      remainingCapitalCents: 19800000,
+      monthlyPaymentCents: 87500,
+      expectedEndDate: DateTime(2045, 1, 1),
+      remainingInstallments: 200,
+    );
+    await repository.createCredit(
+      name: 'Voiture',
+      initialAmountCents: 1500000,
+      remainingCapitalCents: 900000,
+      monthlyPaymentCents: 25000,
+      annualRatePercent: 5.4,
+      expectedEndDate: DateTime(2029, 1, 1),
+      remainingInstallments: 36,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.text("🏁 Crédit le plus proche d'être terminé"), findsOneWidget);
+    expect(find.text('4 mensualités restantes'), findsOneWidget);
+    expect(find.text('💰 Plus grosse mensualité'), findsOneWidget);
+    expect(find.text('📈 Crédit le plus coûteux'), findsOneWidget);
+    expect(find.text('5.4 %'), findsOneWidget);
+    expect(find.text('🏦 Plus gros capital restant'), findsOneWidget);
+    expect(find.text(formatCentsAsEuro(19800000)), findsWidgets);
+  });
+
+  testWidgets('affiche la banque (organisme) et le score visuel sur la carte du crédit', (tester) async {
+    useTallViewport(tester);
+    await repository.createCredit(
+      name: 'Voiture',
+      initialAmountCents: 1500000,
+      remainingCapitalCents: 900000,
+      monthlyPaymentCents: 25000,
+      expectedEndDate: DateTime(2029, 1, 1),
+      remainingInstallments: 4, // < 12 => veryClose
+      organisme: 'Crédit Agricole',
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Crédit Agricole'), findsOneWidget);
+    expect(find.textContaining('Très proche de la fin'), findsOneWidget);
+  });
+
+  testWidgets('les dates affichées sur la carte incluent toujours l\'année', (tester) async {
+    useTallViewport(tester);
+    await repository.createCredit(
+      name: 'Voiture',
+      initialAmountCents: 1500000,
+      remainingCapitalCents: 900000,
+      monthlyPaymentCents: 25000,
+      expectedEndDate: DateTime(2029, 1, 1),
+      remainingInstallments: 36,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('2029'), findsWidgets);
+  });
 }

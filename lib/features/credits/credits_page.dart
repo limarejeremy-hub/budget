@@ -169,6 +169,19 @@ class _SummaryLine extends StatelessWidget {
   }
 }
 
+class _IndicatorData {
+  final String emoji;
+  final String title;
+  final String creditName;
+  final List<String> valueLines;
+  const _IndicatorData({
+    required this.emoji,
+    required this.title,
+    required this.creditName,
+    required this.valueLines,
+  });
+}
+
 class _IndicatorsSection extends StatelessWidget {
   final List<CreditEntity> credits;
   const _IndicatorsSection({required this.credits});
@@ -176,21 +189,43 @@ class _IndicatorsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final earliest = _creditCalculationService.earliestEnding(credits);
-    final lowestCapital = _creditCalculationService.lowestRemainingCapitalCredit(credits);
     final highestPayment = _creditCalculationService.highestMonthlyPaymentCredit(credits);
     final highestRate = _creditCalculationService.highestRateCredit(credits);
+    final highestCapital = _creditCalculationService.highestRemainingCapitalCredit(credits);
 
-    final indicators = <(IconData, String, String)>[
-      if (earliest != null) (Icons.flag_rounded, 'Le plus proche de la fin', earliest.name),
-      if (lowestCapital != null)
-        (Icons.trending_down_rounded, 'Capital restant le plus faible', lowestCapital.name),
+    final indicators = <_IndicatorData>[
+      if (earliest != null)
+        _IndicatorData(
+          emoji: '🏁',
+          title: "Crédit le plus proche d'être terminé",
+          creditName: earliest.name,
+          valueLines: [
+            formatCentsAsEuro(earliest.remainingCapitalCents),
+            '${earliest.remainingInstallments} mensualité'
+                '${earliest.remainingInstallments > 1 ? 's' : ''} restante'
+                '${earliest.remainingInstallments > 1 ? 's' : ''}',
+          ],
+        ),
       if (highestPayment != null)
-        (Icons.payments_rounded, 'Mensualité la plus élevée', highestPayment.name),
-      (
-        Icons.percent_rounded,
-        'Taux le plus élevé',
-        highestRate?.name ?? 'Taux non renseigné',
+        _IndicatorData(
+          emoji: '💰',
+          title: 'Plus grosse mensualité',
+          creditName: highestPayment.name,
+          valueLines: ['${formatCentsAsEuro(highestPayment.monthlyPaymentCents)}/mois'],
+        ),
+      _IndicatorData(
+        emoji: '📈',
+        title: 'Crédit le plus coûteux',
+        creditName: highestRate?.name ?? 'Taux non renseigné',
+        valueLines: highestRate == null ? const [] : ['${highestRate.annualRatePercent} %'],
       ),
+      if (highestCapital != null)
+        _IndicatorData(
+          emoji: '🏦',
+          title: 'Plus gros capital restant',
+          creditName: highestCapital.name,
+          valueLines: [formatCentsAsEuro(highestCapital.remainingCapitalCents)],
+        ),
     ];
 
     if (indicators.isEmpty) return const SizedBox.shrink();
@@ -199,33 +234,48 @@ class _IndicatorsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Indicateurs', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: AppSpacing.sm),
-        for (final (icon, label, value) in indicators) _IndicatorRow(icon: icon, label: label, value: value),
+        const SizedBox(height: AppSpacing.md),
+        Wrap(
+          spacing: AppSpacing.md,
+          runSpacing: AppSpacing.md,
+          children: [for (final data in indicators) _IndicatorCard(data: data)],
+        ),
       ],
     );
   }
 }
 
-class _IndicatorRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _IndicatorRow({required this.icon, required this.label, required this.value});
+class _IndicatorCard extends StatelessWidget {
+  final _IndicatorData data;
+  const _IndicatorCard({required this.data});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
+    return Container(
+      width: 172,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: CategoryColors.credit),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+          Text(
+            '${data.emoji} ${data.title}',
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600),
           ),
-          Text(value, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: AppSpacing.sm),
+          Text(data.creditName,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          for (final line in data.valueLines) ...[
+            const SizedBox(height: 2),
+            Text(line, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+          ],
         ],
       ),
     );
@@ -295,6 +345,11 @@ class _CreditCard extends StatelessWidget {
     final icon = creditIconFor(credit);
     final stars = _creditCalculationService.priorityStars(credit);
     final priorityLabel = _creditCalculationService.priorityLabel(credit);
+    final pace = _creditCalculationService.creditPace(credit);
+    final paceLabel = _creditCalculationService.creditPaceLabel(credit);
+    final paceColor = creditPaceColor(pace);
+    final paceEmoji = creditPaceEmoji(pace);
+    final organisme = credit.organisme;
 
     return Card(
       margin: EdgeInsets.zero,
@@ -302,22 +357,40 @@ class _CreditCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadii.md),
         onTap: () => Navigator.of(context).push(AppPageRoute(builder: (_) => CreditDetailPage(credit: credit))),
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
+          padding: const EdgeInsets.all(AppSpacing.xl),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 32,
-                    height: 32,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
-                    child: Icon(icon, size: 16, color: color),
+                    child: Icon(icon, size: 18, color: color),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
+                  const SizedBox(width: AppSpacing.md),
                   Expanded(
-                    child: Text(credit.name,
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(credit.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0.1)),
+                        if (organisme != null && organisme.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(organisme,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                          ),
+                      ],
+                    ),
                   ),
                   if (!credit.isActive)
                     Container(
@@ -336,7 +409,22 @@ class _CreditCard extends StatelessWidget {
                     Icon(Icons.chevron_right_rounded, size: 20, color: colorScheme.onSurfaceVariant),
                 ],
               ),
-              const SizedBox(height: AppSpacing.sm),
+              if (credit.isActive) ...[
+                const SizedBox(height: AppSpacing.sm),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: paceColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(AppRadii.sm),
+                  ),
+                  child: Text('$paceEmoji $paceLabel',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: paceColor, fontWeight: FontWeight.w600)),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.lg),
               Row(
                 children: [
                   Expanded(
@@ -347,7 +435,7 @@ class _CreditCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: AppSpacing.md),
               Row(
                 children: [
                   Expanded(
@@ -359,12 +447,12 @@ class _CreditCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.sm),
+              const SizedBox(height: AppSpacing.lg),
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadii.sm),
                 child: LinearProgressIndicator(
                   value: credit.repaidProgress,
-                  minHeight: 6,
+                  minHeight: 8,
                   backgroundColor: colorScheme.surfaceContainerHighest,
                   color: color,
                 ),

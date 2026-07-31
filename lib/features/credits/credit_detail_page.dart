@@ -29,6 +29,7 @@ class CreditDetailPage extends ConsumerStatefulWidget {
 class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
   final _extraPaymentController = TextEditingController();
   CreditPrepaymentSimulation? _simulation;
+  int? _simulatedExtraCents;
 
   @override
   void dispose() {
@@ -39,11 +40,15 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
   void _runSimulation() {
     final cents = EuroAmountField.parseCents(_extraPaymentController.text);
     if (cents == null || cents <= 0) {
-      setState(() => _simulation = null);
+      setState(() {
+        _simulation = null;
+        _simulatedExtraCents = null;
+      });
       return;
     }
     setState(() {
       _simulation = simulateCreditPrepayment(credit: widget.credit, extraPaymentCents: cents);
+      _simulatedExtraCents = cents;
     });
   }
 
@@ -55,6 +60,10 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
     final icon = creditIconFor(credit);
     final stars = _creditCalculationService.priorityStars(credit);
     final priorityLabel = _creditCalculationService.priorityLabel(credit);
+    final pace = _creditCalculationService.creditPace(credit);
+    final paceLabel = _creditCalculationService.creditPaceLabel(credit);
+    final paceColor = creditPaceColor(pace);
+    final paceEmoji = creditPaceEmoji(pace);
 
     return Scaffold(
       appBar: AppBar(
@@ -98,6 +107,21 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
                   ),
               ],
             ),
+            if (credit.isActive) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
+                decoration: BoxDecoration(
+                  color: paceColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(AppRadii.sm),
+                ),
+                child: Text('$paceEmoji $paceLabel',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: paceColor, fontWeight: FontWeight.w600)),
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
             if (credit.organisme != null && credit.organisme!.isNotEmpty)
               _DetailRow(label: 'Banque', value: credit.organisme!),
@@ -150,7 +174,7 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
             Text('Versement exceptionnel', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
             Text(
-              'Estimation simplifiée, hors intérêts et pénalités.',
+              'Estimation simplifiée — hors intérêts, hors assurance, hors pénalités.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: AppSpacing.md),
@@ -170,9 +194,13 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
                 FilledButton(onPressed: _runSimulation, child: const Text('Simuler')),
               ],
             ),
-            if (_simulation != null) ...[
+            if (_simulation != null && _simulatedExtraCents != null) ...[
               const SizedBox(height: AppSpacing.lg),
-              _SimulationResult(simulation: _simulation!),
+              _SimulationResult(
+                simulation: _simulation!,
+                extraPaymentCents: _simulatedExtraCents!,
+                monthlyPaymentCents: credit.monthlyPaymentCents,
+              ),
             ],
 
             const SizedBox(height: AppSpacing.xxxl),
@@ -231,30 +259,76 @@ class _DetailRow extends StatelessWidget {
 
 class _SimulationResult extends StatelessWidget {
   final CreditPrepaymentSimulation simulation;
-  const _SimulationResult({required this.simulation});
+  final int extraPaymentCents;
+  final int monthlyPaymentCents;
+  const _SimulationResult({
+    required this.simulation,
+    required this.extraPaymentCents,
+    required this.monthlyPaymentCents,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      decoration: BoxDecoration(
-        color: Color.alphaBlend(CategoryColors.credit.withValues(alpha: 0.08), colorScheme.surfaceContainerHigh),
-        borderRadius: BorderRadius.circular(AppRadii.md),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _DetailRow(
-              label: 'Capital restant après versement',
-              value: formatCentsAsEuro(simulation.remainingCapitalAfterCents)),
-          _DetailRow(
-              label: 'Mensualités théoriques restantes',
-              value: '${simulation.theoreticalRemainingInstallments}'),
-          _DetailRow(label: 'Mois potentiellement gagnés', value: '${simulation.monthsSaved}'),
-          _DetailRow(label: 'Date de fin estimée', value: formatDayMonthFr(simulation.estimatedEndDate)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          decoration: BoxDecoration(
+            color: Color.alphaBlend(CategoryColors.credit.withValues(alpha: 0.08), colorScheme.surfaceContainerHigh),
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Après un remboursement exceptionnel de :',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+              const SizedBox(height: AppSpacing.xs),
+              Text(formatCentsAsEuro(extraPaymentCents),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: AppSpacing.md),
+              Divider(color: colorScheme.outlineVariant, height: 1),
+              const SizedBox(height: AppSpacing.md),
+              _DetailRow(label: 'Capital restant', value: formatCentsAsEuro(simulation.remainingCapitalAfterCents)),
+              _DetailRow(
+                label: 'Gain estimé',
+                value: '${simulation.monthsSaved} mensualité${simulation.monthsSaved > 1 ? 's' : ''}',
+              ),
+              _DetailRow(label: 'Nouvelle fin', value: formatMonthYearFr(simulation.estimatedEndDate)),
+              _DetailRow(label: 'Mensualité toujours', value: '${formatCentsAsEuro(monthlyPaymentCents)}/mois'),
+            ],
+          ),
+        ),
+        if (simulation.monthsSaved > 0) ...[
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: CategoryColors.credit.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppRadii.md),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Tu économiserais environ',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+                Text(formatDurationYearsMonths(simulation.monthsSaved),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: AppSpacing.xs),
+                Text('Excellent choix.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
         ],
-      ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Estimation simplifiée — hors intérêts, hors assurance, hors pénalités.',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }

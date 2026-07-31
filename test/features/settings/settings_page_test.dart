@@ -70,7 +70,7 @@ void main() {
     expect(find.text('Charger les données de démonstration'), findsNothing);
 
     for (var i = 0; i < 7; i++) {
-      await tester.tap(find.text('Version 0.7.0'));
+      await tester.tap(find.text('Version 0.8.0'));
       await tester.pump();
     }
     await tester.pumpAndSettle();

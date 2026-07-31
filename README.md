@@ -54,4 +54,14 @@ depuis Paramètres).
   personnalisation par crédit — organisme, couleur, icône — priorité automatique par étoiles
   (jamais imposée), simulateur multi-crédits comparant l'impact d'un même versement sur
   chaque crédit actif, encart discret "Objectif conseillé" sur le tableau de bord)
-- Statistiques avancées, synchronisation bancaire : à venir
+- Phase 8 (V0.8) — Crédit Manager Premium : ✅ (progression intelligente — montant initial
+  connu, sinon durée totale déduite des dates, sinon capital restant en dernier recours —,
+  dates toujours affichées avec l'année, indicateurs en petites cartes premium (crédit le
+  plus proche de la fin, plus grosse mensualité, plus coûteux, plus gros capital restant),
+  simulateur de versement exceptionnel entièrement refondu — montant versé, capital restant,
+  gain estimé, nouvelle fin, mensualité inchangée, encart "économies estimées" —, score visuel
+  automatique par mensualités restantes (🟢🟡🟠🔴), cartes crédit enrichies — banque, badge de
+  priorité, espacements et typographie premium —, architecture préparée pour la V0.9
+  [décrémentation automatique des crédits] sans l'activer)
+- Statistiques avancées, synchronisation bancaire, automatisation des remboursements (V0.9) :
+  à venir
