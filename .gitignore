@@ -20,4 +20,9 @@ pubspec.lock
 **/android/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 
+# Signature de release — ne jamais commiter la clé privée ni ses secrets.
+android/key.properties
+*.jks
+*.keystore
+
 *.g.dart
