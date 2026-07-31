@@ -166,4 +166,23 @@ void main() {
     expect(cycles, hasLength(2));
     expect(cycles.first.startDate, DateTime(2026, 2, 1));
   });
+
+  test('watchThemeMode démarre sur "system" puis reflète setThemeMode', () async {
+    final stream = repository.watchThemeMode();
+    final values = <String>[];
+    final subscription = stream.listen(values.add);
+
+    await Future<void>.delayed(Duration.zero);
+    expect(values, ['system']);
+
+    await repository.setThemeMode('dark');
+    await Future<void>.delayed(Duration.zero);
+    expect(values, ['system', 'dark']);
+
+    await repository.setThemeMode('light');
+    await Future<void>.delayed(Duration.zero);
+    expect(values.last, 'light');
+
+    await subscription.cancel();
+  });
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/routing/app_page_route.dart';
 import '../../entries/fixed_expense_form_page.dart';
 import '../../entries/income_form_page.dart';
 import '../../entries/saving_form_page.dart';
@@ -32,28 +33,28 @@ class AddEntryFab extends StatelessWidget {
               _AddOptionTile(
                 icon: Icons.shopping_bag_outlined,
                 label: 'Dépense',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                onTap: () => Navigator.of(context).push(AppPageRoute(
                   builder: (_) => VariableExpenseFormPage(cycleId: cycleId),
                 )),
               ),
               _AddOptionTile(
                 icon: Icons.receipt_long_outlined,
                 label: 'Charge fixe',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                onTap: () => Navigator.of(context).push(AppPageRoute(
                   builder: (_) => FixedExpenseFormPage(cycleId: cycleId),
                 )),
               ),
               _AddOptionTile(
                 icon: Icons.payments_outlined,
                 label: 'Revenu',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                onTap: () => Navigator.of(context).push(AppPageRoute(
                   builder: (_) => IncomeFormPage(cycleId: cycleId),
                 )),
               ),
               _AddOptionTile(
                 icon: Icons.savings_outlined,
                 label: 'Épargne',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                onTap: () => Navigator.of(context).push(AppPageRoute(
                   builder: (_) => SavingFormPage(cycleId: cycleId),
                 )),
               ),

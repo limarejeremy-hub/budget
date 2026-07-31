@@ -7,6 +7,7 @@ import 'package:budgetpilot/core/constants/app_constants.dart';
 import 'package:budgetpilot/core/formatting/currency_formatter.dart';
 import 'package:budgetpilot/core/providers/dashboard_providers.dart';
 import 'package:budgetpilot/domain/entities/fixed_expense_entity.dart';
+import 'package:budgetpilot/domain/entities/income_entity.dart';
 import 'package:budgetpilot/domain/models/dashboard_view_data.dart';
 import 'package:budgetpilot/features/dashboard/dashboard_page.dart';
 
@@ -149,6 +150,72 @@ void main() {
 
       expect(find.text('Prochaines échéances'), findsOneWidget);
       expect(find.text('Aucune échéance à venir'), findsOneWidget);
+    });
+  });
+
+  group("Aujourd'hui", () {
+    testWidgets("affiche l'état vide quand aucune opération n'a lieu aujourd'hui", (tester) async {
+      await _pumpDashboard(tester, _sampleData());
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text("Aujourd'hui"), findsOneWidget);
+      expect(find.text('Aucune opération aujourd\'hui'), findsOneWidget);
+    });
+
+    testWidgets('affiche les prélèvements, revenus et alertes du jour', (tester) async {
+      final data = DashboardViewData(
+        cycleId: 1,
+        cycleStart: DateTime(2026, 7, 27),
+        cycleEnd: DateTime(2026, 8, 26),
+        totalIncomeCents: 515000,
+        totalFixedExpensesCents: 245000,
+        totalVariableExpensesCents: 67700,
+        totalSavingsCents: 80000,
+        realRemainingCents: 122300,
+        remainingRatio: 0.24,
+        unconfirmedChargesCount: 0,
+        unconfirmedChargesTotalCents: 0,
+        todayFixedExpenses: [
+          FixedExpenseEntity(
+            id: 1,
+            cycleId: 1,
+            name: 'Internet',
+            expectedAmountCents: 12000,
+            expectedDate: DateTime(2026, 8, 5),
+          ),
+        ],
+        todayIncomes: [
+          IncomeEntity(id: 1, cycleId: 1, name: 'Salaire', expectedAmountCents: 245000, expectedDate: DateTime(2026, 8, 5)),
+        ],
+        alerts: [
+          FixedExpenseEntity(
+            id: 2,
+            cycleId: 1,
+            name: 'Assurance',
+            expectedAmountCents: 8000,
+            expectedDate: DateTime(2026, 7, 20),
+            status: ChargeStatus.aConfirmer,
+          ),
+        ],
+      );
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Internet'), findsOneWidget);
+      expect(find.text('Salaire'), findsOneWidget);
+      expect(find.textContaining('Assurance'), findsOneWidget);
+    });
+  });
+
+  group('Progression du cycle', () {
+    testWidgets('affiche le nombre de jours restants dans le cycle', (tester) async {
+      await _pumpDashboard(tester, _sampleData());
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.textContaining('dans ce cycle'), findsOneWidget);
     });
   });
 }

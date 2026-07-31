@@ -6,8 +6,9 @@ import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/entries_providers.dart';
 import '../../core/theme/charge_status_presentation.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/premium_tap_card.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
-import '../entries/fixed_expense_form_page.dart';
+import '../charges/charge_detail_sheet.dart';
 
 /// "Éléments à surveiller" — charges fixes à vérifier aujourd'hui, en
 /// retard (à confirmer) ou en incident. Ouvert depuis l'icône de
@@ -57,9 +58,10 @@ class WatchlistPage extends ConsumerWidget {
               );
             }
 
-            return ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
               itemCount: watched.length,
+              separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
               itemBuilder: (context, index) => _WatchedChargeTile(charge: watched[index], cycleId: cycleId),
             );
           },
@@ -77,14 +79,37 @@ class _WatchedChargeTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final presentation = ChargeStatusPresentation.of(charge.status, context);
-    return ListTile(
-      leading: Icon(presentation.icon, color: presentation.color),
-      title: Text(charge.name),
-      subtitle: Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}'),
-      trailing: Text(formatCentsAsEuro(charge.effectiveAmountCents)),
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => FixedExpenseFormPage(cycleId: cycleId, existing: charge),
-      )),
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return PremiumTapCard(
+      color: Color.alphaBlend(presentation.color.withValues(alpha: 0.08), colorScheme.surfaceContainerHigh),
+      borderRadius: BorderRadius.circular(AppRadii.md),
+      onTap: () => showChargeDetailSheet(context, charge: charge, cycleId: cycleId),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        child: Row(
+          children: [
+            Icon(presentation.icon, color: presentation.color),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(charge.name, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+            Text(formatCentsAsEuro(charge.effectiveAmountCents),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -330,6 +330,36 @@ class CycleRepository {
   Future<void> deleteSaving(int id) => (db.delete(db.savings)..where((t) => t.id.equals(id))).go();
 
   // ---------------------------------------------------------------------
+  // Préférences (thème)
+  // ---------------------------------------------------------------------
+
+  Future<String> _loadThemeMode() async {
+    final row = await db.select(db.appSettingsTable).getSingleOrNull();
+    return row?.themeMode ?? 'system';
+  }
+
+  /// Flux du thème choisi ('system' / 'light' / 'dark'), persisté en base
+  /// pour survivre aux redémarrages et aux mises à jour de l'app.
+  Stream<String> watchThemeMode() async* {
+    yield await _loadThemeMode();
+    yield* db
+        .tableUpdates(TableUpdateQuery.onAllTables([db.appSettingsTable]))
+        .asyncMap((_) => _loadThemeMode());
+  }
+
+  Future<void> setThemeMode(String mode) async {
+    final existing = await db.select(db.appSettingsTable).getSingleOrNull();
+    if (existing == null) {
+      await db.into(db.appSettingsTable).insert(AppSettingsTableCompanion.insert(
+            themeMode: Value(mode),
+          ));
+    } else {
+      await (db.update(db.appSettingsTable)..where((t) => t.id.equals(existing.id)))
+          .write(AppSettingsTableCompanion(themeMode: Value(mode)));
+    }
+  }
+
+  // ---------------------------------------------------------------------
   // Sauvegarde (export / import JSON local)
   // ---------------------------------------------------------------------
 
