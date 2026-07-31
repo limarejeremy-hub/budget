@@ -35,4 +35,9 @@ depuis Paramètres).
 - Phase 4 (V0.4) — Tableau de bord cliquable et conservation des données : ✅ (détail du cycle,
   navigation depuis chaque carte, changement de statut des charges, éléments à surveiller,
   sauvegarde export/import, signature de release stable)
-- Statistiques avancées, synchronisation bancaire, refonte visuelle supplémentaire : à venir
+- Phase 5 (V0.5) — Expérience premium : ✅ (carte Argent Libre "carte bancaire" avec marque
+  vectorielle BudgetPilot, montants animés, section "Aujourd'hui", barre de progression du
+  cycle, listes avec recherche/tri/filtres, fiche détaillée de charge (modifier / marquer
+  prélevée / dupliquer / supprimer), thème clair/sombre/système persisté, écran Documentation,
+  transitions de page, design system centralisé)
+- Statistiques avancées, synchronisation bancaire : à venir

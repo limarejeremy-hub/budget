@@ -161,7 +161,7 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Charges fixes'), findsOneWidget);
   });
 
-  testWidgets('une ligne "Prochaines échéances" ouvre le détail de la charge', (tester) async {
+  testWidgets('une ligne "Prochaines échéances" ouvre la fiche détaillée de la charge', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -179,6 +179,15 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Crédit maison'));
+    await tester.pumpAndSettle();
+
+    // La fiche détaillée s'ouvre en bas d'écran avec les actions.
+    expect(find.text('Modifier'), findsOneWidget);
+    expect(find.text('Marquer comme prélevée'), findsOneWidget);
+    expect(find.text('Dupliquer'), findsOneWidget);
+    expect(find.text('Supprimer'), findsOneWidget);
+
+    await tester.tap(find.text('Modifier'));
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(AppBar, 'Modifier la charge fixe'), findsOneWidget);

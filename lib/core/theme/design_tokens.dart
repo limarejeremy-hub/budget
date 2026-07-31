@@ -60,4 +60,29 @@ class AppShadows {
           offset: const Offset(0, 10),
         ),
       ];
+
+  static List<BoxShadow> subtle(Brightness brightness) => [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: brightness == Brightness.dark ? 0.25 : 0.05),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+        ),
+      ];
+}
+
+/// Durées d'animation centralisées — cohérence des micro-interactions
+/// (tap, transitions de page, changement de valeur) dans toute l'app.
+class AppDurations {
+  AppDurations._();
+  static const Duration fast = Duration(milliseconds: 120);
+  static const Duration medium = Duration(milliseconds: 250);
+  static const Duration slow = Duration(milliseconds: 450);
+  static const Duration pageTransition = Duration(milliseconds: 280);
+}
+
+/// Courbes d'animation centralisées.
+class AppCurves {
+  AppCurves._();
+  static const Curve standard = Curves.easeOutCubic;
+  static const Curve emphasized = Curves.easeOutQuint;
 }

@@ -1,4 +1,5 @@
 import '../entities/fixed_expense_entity.dart';
+import '../entities/income_entity.dart';
 
 /// Modèle de vue prêt à afficher — construit par [DashboardViewBuilder].
 class DashboardViewData {
@@ -21,6 +22,18 @@ class DashboardViewData {
   final List<FixedExpenseEntity> upcomingCharges;
   final int? declaredBankBalanceCents;
 
+  /// Charges fixes dont la date prévue est aujourd'hui — section
+  /// "Aujourd'hui" du tableau de bord.
+  final List<FixedExpenseEntity> todayFixedExpenses;
+
+  /// Revenus attendus aujourd'hui — section "Aujourd'hui".
+  final List<IncomeEntity> todayIncomes;
+
+  /// Charges nécessitant une attention immédiate (incident ou à confirmer /
+  /// en retard), toutes dates confondues — alertes de la section
+  /// "Aujourd'hui".
+  final List<FixedExpenseEntity> alerts;
+
   const DashboardViewData({
     required this.cycleId,
     required this.cycleStart,
@@ -36,5 +49,30 @@ class DashboardViewData {
     this.nextChargeToCheck,
     this.upcomingCharges = const [],
     this.declaredBankBalanceCents,
+    this.todayFixedExpenses = const [],
+    this.todayIncomes = const [],
+    this.alerts = const [],
   });
+
+  /// Nombre de jours restants dans le cycle (inclut aujourd'hui, jamais
+  /// négatif) — utilisé par la barre de progression du cycle.
+  int daysRemaining({DateTime? now}) {
+    final today = _dayOnly(now ?? DateTime.now());
+    final end = _dayOnly(cycleEnd);
+    if (!end.isAfter(today)) return 0;
+    return end.difference(today).inDays;
+  }
+
+  /// Progression du cycle entre 0.0 (début) et 1.0 (fin ou au-delà).
+  double cycleProgress({DateTime? now}) {
+    final today = _dayOnly(now ?? DateTime.now());
+    final start = _dayOnly(cycleStart);
+    final end = _dayOnly(cycleEnd);
+    final totalDays = end.difference(start).inDays;
+    if (totalDays <= 0) return 1;
+    final elapsed = today.difference(start).inDays;
+    return (elapsed / totalDays).clamp(0.0, 1.0);
+  }
+
+  static DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 }

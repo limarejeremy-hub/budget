@@ -50,4 +50,71 @@ void main() {
     expect(result.unconfirmedChargesCount, 1);
     expect(result.nextChargeToCheck?.name, 'EDF');
   });
+
+  test('identifie les charges et revenus du jour, et les alertes', () {
+    final today = DateTime(2026, 8, 5);
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      now: today,
+      incomes: [
+        IncomeEntity(id: 1, cycleId: 1, name: 'Salaire', expectedAmountCents: 245000, expectedDate: today),
+        IncomeEntity(
+            id: 2, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 20)),
+      ],
+      fixedExpenses: [
+        FixedExpenseEntity(
+          id: 1,
+          cycleId: 1,
+          name: 'Internet',
+          expectedAmountCents: 12000,
+          expectedDate: today,
+          status: ChargeStatus.aVenir,
+        ),
+        FixedExpenseEntity(
+          id: 2,
+          cycleId: 1,
+          name: 'Assurance',
+          expectedAmountCents: 8000,
+          expectedDate: DateTime(2026, 7, 20),
+          status: ChargeStatus.aConfirmer,
+        ),
+        FixedExpenseEntity(
+          id: 3,
+          cycleId: 1,
+          name: 'Loyer',
+          expectedAmountCents: 70000,
+          expectedDate: DateTime(2026, 7, 27),
+          status: ChargeStatus.incident,
+        ),
+      ],
+      variableExpenses: const [],
+      savings: const [],
+    );
+
+    expect(result.todayFixedExpenses.map((e) => e.name), ['Internet']);
+    expect(result.todayIncomes.map((i) => i.name), ['Salaire']);
+    expect(result.alerts.map((e) => e.name), containsAll(['Assurance', 'Loyer']));
+  });
+
+  test('daysRemaining et cycleProgress reflètent la position dans le cycle', () {
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      incomes: const [],
+      fixedExpenses: const [],
+      variableExpenses: const [],
+      savings: const [],
+    );
+
+    // Cycle du 27/07 au 26/08 (30 jours) ; "aujourd'hui" = 6/08 → 20 jours restants.
+    final midCycle = DateTime(2026, 8, 6);
+    expect(result.daysRemaining(now: midCycle), 20);
+    expect(result.cycleProgress(now: midCycle), closeTo(10 / 30, 0.001));
+
+    expect(result.daysRemaining(now: DateTime(2026, 8, 26)), 0);
+    expect(result.daysRemaining(now: DateTime(2026, 9, 1)), 0);
+  });
 }

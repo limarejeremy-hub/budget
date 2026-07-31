@@ -24,6 +24,7 @@ class DashboardViewBuilder {
     required List<VariableExpenseEntity> variableExpenses,
     required List<SavingEntity> savings,
     int? declaredBankBalanceCents,
+    DateTime? now,
   }) {
     final totalIncome = _calculationService.calculateTotalExpectedIncome(incomes);
     final totalFixed = _calculationService.calculateTotalFixedExpenses(fixedExpenses);
@@ -50,6 +51,20 @@ class DashboardViewBuilder {
         .toList()
       ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
 
+    final today = now ?? DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    bool isToday(DateTime d) => DateTime(d.year, d.month, d.day) == todayOnly;
+
+    final todayFixed = fixedExpenses.where((e) => e.isActive && isToday(e.expectedDate)).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final todayIncomes = incomes.where((i) => i.isActive && isToday(i.expectedDate)).toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    final alerts = fixedExpenses
+        .where((e) =>
+            e.isActive && (e.status == ChargeStatus.incident || e.status == ChargeStatus.aConfirmer))
+        .toList()
+      ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
+
     return DashboardViewData(
       cycleId: cycleId,
       cycleStart: cycleStart,
@@ -66,6 +81,9 @@ class DashboardViewBuilder {
       nextChargeToCheck: unconfirmed.isEmpty ? null : unconfirmed.first,
       upcomingCharges: unconfirmed.take(3).toList(),
       declaredBankBalanceCents: declaredBankBalanceCents,
+      todayFixedExpenses: todayFixed,
+      todayIncomes: todayIncomes,
+      alerts: alerts,
     );
   }
 }

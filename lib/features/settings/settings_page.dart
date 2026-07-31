@@ -8,13 +8,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/database_provider.dart';
+import '../../core/providers/settings_providers.dart';
+import '../../core/routing/app_page_route.dart';
+import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/budgetpilot_logo.dart';
 import '../../data/local/cycle_repository.dart';
 import '../../data/local/demo_data_seeder.dart';
+import 'documentation_page.dart';
 
-/// Onglet "Paramètres". Contient la sauvegarde locale (export/import JSON)
-/// et un menu développeur caché (7 appuis sur le numéro de version) donnant
-/// accès au jeu de données de démonstration, uniquement utile pour les
-/// tests, jamais dans le parcours normal.
+/// Onglet "Paramètres" : sauvegarde locale (export/import JSON), thème,
+/// documentation, version, et un menu développeur caché (7 appuis sur le
+/// numéro de version) donnant accès au jeu de données de démonstration,
+/// uniquement utile pour les tests, jamais dans le parcours normal.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
 
@@ -160,11 +165,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = ref.watch(themeModeProvider).valueOrNull ?? ThemeMode.system;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Paramètres')),
       body: SafeArea(
         child: ListView(
           children: [
+            const SizedBox(height: AppSpacing.md),
+            const Center(child: BudgetPilotBadge(diameter: 56)),
+            const SizedBox(height: AppSpacing.sm),
+            Center(
+              child: Text(AppConstants.appName, style: Theme.of(context).textTheme.titleMedium),
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+            const _SectionHeader('Général'),
             const ListTile(
               leading: Icon(Icons.euro_outlined),
               title: Text('Devise'),
@@ -175,11 +190,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               title: Text('Langue'),
               subtitle: Text('Français (France)'),
             ),
-            const Divider(),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text('Sauvegarde', style: TextStyle(fontWeight: FontWeight.bold)),
+            const _SectionHeader('Thème'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+              child: SegmentedButton<ThemeMode>(
+                segments: const [
+                  ButtonSegment(
+                      value: ThemeMode.system,
+                      icon: Icon(Icons.brightness_auto_outlined),
+                      label: Text('Système')),
+                  ButtonSegment(
+                      value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Clair')),
+                  ButtonSegment(
+                      value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Sombre')),
+                ],
+                selected: {themeMode},
+                onSelectionChanged: (selection) => ref
+                    .read(cycleRepositoryProvider)
+                    .setThemeMode(themeModeToString(selection.first)),
+              ),
             ),
+            const SizedBox(height: AppSpacing.lg),
+            const _SectionHeader('Sauvegarde'),
             ListTile(
               leading: const Icon(Icons.file_upload_outlined),
               title: const Text('Exporter une sauvegarde'),
@@ -194,19 +226,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               enabled: !_backupBusy,
               onTap: _importBackup,
             ),
-            const Divider(),
+            const _SectionHeader('À propos'),
+            ListTile(
+              leading: const Icon(Icons.menu_book_outlined),
+              title: const Text('Documentation'),
+              subtitle: const Text("Utilisation de l'app et conservation des données"),
+              onTap: () => Navigator.of(context).push(AppPageRoute(
+                builder: (_) => const DocumentationPage(),
+              )),
+            ),
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 0.4.0'),
+              subtitle: const Text('Version 0.5.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[
-              const Divider(),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text('Menu développeur', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
+              const _SectionHeader('Mode développeur'),
               ListTile(
                 leading: const Icon(Icons.science_outlined),
                 title: const Text('Charger les données de démonstration'),
@@ -235,8 +271,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 },
               ),
             ],
+            const SizedBox(height: AppSpacing.xxl),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.lg, AppSpacing.xl, AppSpacing.sm),
+      child: Text(
+        title,
+        style: Theme.of(context)
+            .textTheme
+            .labelLarge
+            ?.copyWith(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
       ),
     );
   }

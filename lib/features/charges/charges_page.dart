@@ -3,19 +3,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/formatting/currency_formatter.dart';
-import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/entries_providers.dart';
+import '../../core/routing/app_page_route.dart';
 import '../../core/theme/charge_status_presentation.dart';
-import '../../core/widgets/confirm_delete_dialog.dart';
+import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/premium_search_bar.dart';
+import '../../core/widgets/premium_tap_card.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
+import 'charge_detail_sheet.dart';
 
-/// Onglet "Charges" : liste des charges fixes du cycle courant.
-class ChargesPage extends ConsumerWidget {
+const _kAllStatuses = 'toutes';
+
+/// Onglet "Charges" : liste premium des charges fixes du cycle courant —
+/// recherche, filtre par statut, tri par date, cartes avec badge.
+class ChargesPage extends ConsumerStatefulWidget {
   const ChargesPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChargesPage> createState() => _ChargesPageState();
+}
+
+class _ChargesPageState extends ConsumerState<ChargesPage> {
+  final _searchController = TextEditingController();
+  bool _sortAscending = true;
+  String _statusFilter = _kAllStatuses;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cycleAsync = ref.watch(currentCycleProvider);
     final chargesAsync = ref.watch(fixedExpensesProvider);
     final cycleId = cycleAsync.valueOrNull?.id;
@@ -32,15 +53,51 @@ class ChargesPage extends ConsumerWidget {
                   if (charges.isEmpty) {
                     return const Center(child: Text('Aucune charge fixe pour ce cycle'));
                   }
-                  final sorted = [...charges]
-                    ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
-                  return ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 88),
-                    itemCount: sorted.length,
-                    itemBuilder: (context, index) {
-                      final charge = sorted[index];
-                      return _ChargeTile(charge: charge, cycleId: cycleId);
-                    },
+
+                  final query = _searchController.text.trim().toLowerCase();
+                  final filtered = charges.where((c) {
+                    final matchesQuery = query.isEmpty || c.name.toLowerCase().contains(query);
+                    final matchesStatus = _statusFilter == _kAllStatuses || c.status == _statusFilter;
+                    return matchesQuery && matchesStatus;
+                  }).toList()
+                    ..sort((a, b) => _sortAscending
+                        ? a.expectedDate.compareTo(b.expectedDate)
+                        : b.expectedDate.compareTo(a.expectedDate));
+
+                  return Column(
+                    children: [
+                      PremiumSearchBar(
+                        controller: _searchController,
+                        hintText: 'Rechercher une charge',
+                        sortAscending: _sortAscending,
+                        sortTooltip: 'Trier par date',
+                        onToggleSort: () => setState(() => _sortAscending = !_sortAscending),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                        child: _StatusFilterRow(
+                          selected: _statusFilter,
+                          onSelected: (status) => setState(() => _statusFilter = status),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Text('Aucun résultat',
+                                    style: Theme.of(context).textTheme.bodyMedium))
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                    AppSpacing.lg, 0, AppSpacing.lg, 88),
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+                                itemBuilder: (context, index) {
+                                  final charge = filtered[index];
+                                  return _ChargeCard(charge: charge, cycleId: cycleId);
+                                },
+                              ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -48,7 +105,7 @@ class ChargesPage extends ConsumerWidget {
       floatingActionButton: cycleId == null
           ? null
           : FloatingActionButton(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              onPressed: () => Navigator.of(context).push(AppPageRoute(
                 builder: (_) => FixedExpenseFormPage(cycleId: cycleId),
               )),
               child: const Icon(Icons.add),
@@ -57,49 +114,106 @@ class ChargesPage extends ConsumerWidget {
   }
 }
 
-class _ChargeTile extends ConsumerWidget {
-  final FixedExpenseEntity charge;
-  final int cycleId;
-  const _ChargeTile({required this.charge, required this.cycleId});
+class _StatusFilterRow extends StatelessWidget {
+  final String selected;
+  final ValueChanged<String> onSelected;
+  const _StatusFilterRow({required this.selected, required this.onSelected});
+
+  static const _filters = [
+    (_kAllStatuses, 'Toutes'),
+    (ChargeStatus.aVenir, 'À venir'),
+    (ChargeStatus.aVerifierAujourdhui, "Aujourd'hui"),
+    (ChargeStatus.aConfirmer, 'En retard'),
+    (ChargeStatus.prelevee, 'Prélevée'),
+  ];
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final presentation = ChargeStatusPresentation.of(charge.status, context);
-    return ListTile(
-      leading: Icon(presentation.icon, color: presentation.color),
-      title: Text(charge.name),
-      subtitle: Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(formatCentsAsEuro(charge.effectiveAmountCents)),
-          PopupMenuButton<String>(
-            tooltip: 'Changer le statut',
-            icon: const Icon(Icons.more_vert),
-            onSelected: (status) =>
-                ref.read(cycleRepositoryProvider).updateFixedExpenseStatus(charge.id, status),
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: ChargeStatus.prelevee, child: Text('Marquer prélevée')),
-              PopupMenuItem(value: ChargeStatus.suspendue, child: Text('Suspendre')),
-              PopupMenuItem(value: ChargeStatus.incident, child: Text('Signaler un incident')),
-              PopupMenuItem(value: ChargeStatus.aVenir, child: Text('Réinitialiser (auto)')),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Supprimer',
-            onPressed: () async {
-              final confirmed = await confirmDelete(context, title: 'Supprimer "${charge.name}" ?');
-              if (confirmed) {
-                await ref.read(cycleRepositoryProvider).deleteFixedExpense(charge.id);
-              }
-            },
-          ),
-        ],
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _filters.length,
+        separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.xs),
+        itemBuilder: (context, index) {
+          final (value, label) = _filters[index];
+          return ChoiceChip(
+            label: Text(label),
+            selected: selected == value,
+            onSelected: (_) => onSelected(value),
+          );
+        },
       ),
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => FixedExpenseFormPage(cycleId: cycleId, existing: charge),
-      )),
+    );
+  }
+}
+
+class _ChargeCard extends StatelessWidget {
+  final FixedExpenseEntity charge;
+  final int cycleId;
+  const _ChargeCard({required this.charge, required this.cycleId});
+
+  @override
+  Widget build(BuildContext context) {
+    final presentation = ChargeStatusPresentation.of(charge.status, context);
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return PremiumTapCard(
+      color: Color.alphaBlend(presentation.color.withValues(alpha: 0.07), colorScheme.surfaceContainerHigh),
+      borderRadius: BorderRadius.circular(AppRadii.md),
+      onTap: () => showChargeDetailSheet(context, charge: charge, cycleId: cycleId),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration:
+                  BoxDecoration(color: presentation.color.withValues(alpha: 0.16), shape: BoxShape.circle),
+              child: Icon(presentation.icon, size: 17, color: presentation.color),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(charge.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Row(
+                    children: [
+                      Text(formatDayMonthFr(charge.expectedDate),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                      const SizedBox(width: AppSpacing.xs),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: presentation.color.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
+                        ),
+                        child: Text(presentation.label,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: presentation.color, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Text(formatCentsAsEuro(charge.effectiveAmountCents),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            const SizedBox(width: AppSpacing.xs),
+            Icon(Icons.chevron_right_rounded, size: 18, color: colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -5,20 +5,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
+import '../../core/routing/app_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/charge_status_presentation.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/animated_amount.dart';
+import '../../core/widgets/budgetpilot_logo.dart';
+import '../../core/widgets/premium_tap_card.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
+import '../charges/charge_detail_sheet.dart';
 import '../charges/charges_page.dart';
 import '../cycle/cycle_creation_page.dart';
 import '../cycle/cycle_detail_page.dart';
-import '../entries/fixed_expense_form_page.dart';
 import '../entries/incomes_list_page.dart';
 import '../entries/savings_list_page.dart';
 import '../expenses/variable_expenses_page.dart';
 import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
+import 'widgets/cycle_progress_bar.dart';
+import 'widgets/today_section.dart';
 
 class DashboardPage extends ConsumerWidget {
   const DashboardPage({super.key});
@@ -65,7 +71,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              onPressed: () => Navigator.of(context).push(AppPageRoute(
                 builder: (_) => const CycleCreationPage(),
               )),
               child: const Text('Créer mon premier cycle'),
@@ -126,6 +132,10 @@ class _DashboardContent extends StatelessWidget {
             _DashboardHeader(cycleId: data.cycleId),
             const SizedBox(height: AppSpacing.xxl),
             _ArgentLibreCard(data: data),
+            const SizedBox(height: AppSpacing.lg),
+            CycleProgressBar(data: data),
+            const SizedBox(height: AppSpacing.xxl),
+            TodaySection(data: data),
             const SizedBox(height: AppSpacing.xxl),
             Text('Résumé du cycle', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.md),
@@ -152,6 +162,8 @@ class _DashboardHeader extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     return Row(
       children: [
+        const BudgetPilotBadge(diameter: 40),
+        const SizedBox(width: AppSpacing.md),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,7 +188,7 @@ class _DashboardHeader extends StatelessWidget {
         const SizedBox(width: AppSpacing.sm),
         IconButton.filledTonal(
           tooltip: 'Éléments à surveiller',
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+          onPressed: () => Navigator.of(context).push(AppPageRoute(
             builder: (_) => WatchlistPage(cycleId: cycleId),
           )),
           icon: const Icon(Icons.notifications_none_rounded),
@@ -186,9 +198,11 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
-/// Grande carte "Argent Libre" — dégradé or premium construit entièrement
-/// en widgets Flutter (aucune image), badge de situation dynamique, reflet
-/// subtil. Cliquable : ouvre le détail complet du cycle.
+/// Grande carte "Argent Libre" — la signature visuelle de BudgetPilot.
+/// Métal brossé or, texture discrète, reflet, marque vectorielle
+/// BudgetPilot (aucune image, aucun emoji), montant animé, badge de
+/// situation dynamique. Cliquable (avec léger effet au toucher) : ouvre le
+/// détail complet du cycle.
 class _ArgentLibreCard extends StatelessWidget {
   final DashboardViewData data;
   const _ArgentLibreCard({required this.data});
@@ -201,9 +215,11 @@ class _ArgentLibreCard extends StatelessWidget {
     final statusIcon = AppTheme.statusIconForRemainingRatio(data.remainingRatio);
     final accent = GoldGradient.accentForBrightness(brightness);
 
-    return Container(
-      width: double.infinity,
-      clipBehavior: Clip.antiAlias,
+    return PremiumTapCard(
+      onTap: () => Navigator.of(context).push(AppPageRoute(
+        builder: (_) => CycleDetailPage(data: data),
+      )),
+      borderRadius: BorderRadius.circular(AppRadii.xl),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(AppRadii.xl),
         gradient: LinearGradient(
@@ -213,113 +229,137 @@ class _ArgentLibreCard extends StatelessWidget {
         ),
         boxShadow: AppShadows.card(brightness),
       ),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: () => Navigator.of(context).push(MaterialPageRoute(
-            builder: (_) => CycleDetailPage(data: data),
-          )),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
-            child: Stack(
-              children: [
-                // Reflet subtil : bande diagonale semi-transparente en haut de
-                // la carte, pour un effet premium sans image.
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: 1,
-                        heightFactor: 0.45,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(AppRadii.xl),
-                              topRight: Radius.circular(AppRadii.xl),
-                            ),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.white.withValues(alpha: brightness == Brightness.dark ? 0.06 : 0.35),
-                                Colors.white.withValues(alpha: 0),
-                              ],
-                            ),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
+          child: Stack(
+            children: [
+              // Texture métal brossé : fines rayures diagonales à très
+              // faible opacité, purement décoratives.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(painter: _BrushedMetalPainter(brightness)),
+                ),
+              ),
+              // Reflet subtil : bande diagonale semi-transparente en haut de
+              // la carte, pour un effet premium sans image.
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: 1,
+                      heightFactor: 0.45,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(AppRadii.xl),
+                            topRight: Radius.circular(AppRadii.xl),
+                          ),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.white.withValues(alpha: brightness == Brightness.dark ? 0.07 : 0.38),
+                              Colors.white.withValues(alpha: 0),
+                            ],
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      'ARGENT LIBRE',
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    'ARGENT LIBRE',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelLarge
+                        ?.copyWith(letterSpacing: 3, color: accent, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: AnimatedAmount(
+                      cents: data.realRemainingCents,
                       style: Theme.of(context)
                           .textTheme
-                          .labelLarge
-                          ?.copyWith(letterSpacing: 3, color: accent, fontWeight: FontWeight.w600),
+                          .displayMedium
+                          ?.copyWith(fontWeight: FontWeight.bold, color: accent),
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        formatCentsAsEuro(data.realRemainingCents),
-                        style: Theme.of(context)
-                            .textTheme
-                            .displayMedium
-                            ?.copyWith(fontWeight: FontWeight.bold, color: accent),
-                      ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(AppRadii.sm),
                     ),
-                    const SizedBox(height: AppSpacing.md),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(AppRadii.sm),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(statusIcon, size: 15, color: statusColor),
-                          const SizedBox(width: AppSpacing.xs),
-                          Text(
-                            statusLabel,
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(statusIcon, size: 15, color: statusColor),
+                        const SizedBox(width: AppSpacing.xs),
+                        Text(
+                          statusLabel,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelMedium
+                              ?.copyWith(color: statusColor, fontWeight: FontWeight.w600),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      "Disponible jusqu'au ${formatDayMonthFr(data.cycleEnd)}",
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: accent.withValues(alpha: 0.85)),
-                    ),
-                  ],
-                ),
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Icon(Icons.workspace_premium_rounded,
-                      size: 22, color: accent.withValues(alpha: 0.55)),
-                ),
-              ],
-            ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    "Disponible jusqu'au ${formatDayMonthFr(data.cycleEnd)}",
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: accent.withValues(alpha: 0.85)),
+                  ),
+                ],
+              ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: BudgetPilotMark(size: 22, color: accent.withValues(alpha: 0.65)),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+/// Fines rayures diagonales évoquant un métal brossé — purement décoratif,
+/// coût de rendu négligeable (une vingtaine de lignes).
+class _BrushedMetalPainter extends CustomPainter {
+  final Brightness brightness;
+  const _BrushedMetalPainter(this.brightness);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: brightness == Brightness.dark ? 0.025 : 0.09)
+      ..strokeWidth = 1;
+    const spacing = 10.0;
+    final diagonal = size.width + size.height;
+    for (double offset = -size.height; offset < diagonal; offset += spacing) {
+      canvas.drawLine(Offset(offset, 0), Offset(offset - size.height, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BrushedMetalPainter oldDelegate) =>
+      oldDelegate.brightness != brightness;
 }
 
 class _CycleSummaryGrid extends StatelessWidget {
@@ -335,7 +375,7 @@ class _CycleSummaryGrid extends StatelessWidget {
         cents: data.totalIncomeCents,
         icon: Icons.trending_up_rounded,
         color: CategoryColors.income,
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
+        onTap: (ctx) => Navigator.of(ctx).push(AppPageRoute(
           builder: (_) => IncomesListPage(cycleId: data.cycleId),
         )),
       ),
@@ -345,7 +385,7 @@ class _CycleSummaryGrid extends StatelessWidget {
         cents: data.totalFixedExpensesCents,
         icon: Icons.receipt_long_rounded,
         color: CategoryColors.fixedExpense,
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
+        onTap: (ctx) => Navigator.of(ctx).push(AppPageRoute(
           builder: (_) => const ChargesPage(),
         )),
       ),
@@ -355,7 +395,7 @@ class _CycleSummaryGrid extends StatelessWidget {
         cents: data.totalVariableExpensesCents,
         icon: Icons.shopping_bag_rounded,
         color: CategoryColors.variableExpense,
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
+        onTap: (ctx) => Navigator.of(ctx).push(AppPageRoute(
           builder: (_) => const VariableExpensesPage(),
         )),
       ),
@@ -365,7 +405,7 @@ class _CycleSummaryGrid extends StatelessWidget {
         cents: data.totalSavingsCents,
         icon: Icons.savings_rounded,
         color: CategoryColors.saving,
-        onTap: (ctx) => Navigator.of(ctx).push(MaterialPageRoute(
+        onTap: (ctx) => Navigator.of(ctx).push(AppPageRoute(
           builder: (_) => SavingsListPage(cycleId: data.cycleId),
         )),
       ),
@@ -379,7 +419,7 @@ class _CycleSummaryGrid extends StatelessWidget {
         crossAxisCount: 2,
         mainAxisSpacing: AppSpacing.md,
         crossAxisSpacing: AppSpacing.md,
-        mainAxisExtent: 108,
+        mainAxisExtent: 96,
       ),
       itemBuilder: (context, index) => _SummaryTile(item: items[index]),
     );
@@ -412,48 +452,46 @@ class _SummaryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final brightness = Theme.of(context).brightness;
+    final tintedBackground = Color.alphaBlend(
+      item.color.withValues(alpha: brightness == Brightness.dark ? 0.14 : 0.09),
+      colorScheme.surfaceContainerHigh,
+    );
 
-    return Material(
-      color: colorScheme.surfaceContainerHigh,
+    return PremiumTapCard(
+      color: tintedBackground,
       borderRadius: BorderRadius.circular(AppRadii.md),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadii.md),
-        onTap: () => item.onTap(context),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration:
-                    BoxDecoration(color: item.color.withValues(alpha: 0.18), shape: BoxShape.circle),
-                child: Icon(item.icon, color: item.color, size: 18),
+      onTap: () => item.onTap(context),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration:
+                  BoxDecoration(color: item.color.withValues(alpha: 0.2), shape: BoxShape.circle),
+              child: Icon(item.icon, color: item.color, size: 17),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(item.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+                  AnimatedAmount(
+                    cents: item.cents,
+                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(item.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-                    Text(formatCentsAsEuro(item.cents),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                    Text(item.subtext,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -461,8 +499,9 @@ class _SummaryTile extends StatelessWidget {
 }
 
 /// Section "Prochaines échéances" — affiche directement les 3 prochaines
-/// charges fixes non confirmées, chaque ligne ouvrant le détail de la
-/// charge correspondante, avec accès à la liste complète.
+/// charges fixes non confirmées sous forme de vraies cartes (badge de
+/// statut inclus). Chaque carte ouvre la fiche détaillée de la charge
+/// (Modifier / Marquer comme prélevée / Dupliquer / Supprimer).
 class _UpcomingChargesSection extends StatelessWidget {
   final DashboardViewData data;
   const _UpcomingChargesSection({required this.data});
@@ -471,78 +510,78 @@ class _UpcomingChargesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+            Expanded(
+              child: Text('Prochaines échéances', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(AppPageRoute(
+                builder: (_) => const ChargesPage(),
+              )),
+              child: const Text('Voir toutes'),
+            ),
+          ],
+        ),
+        if (data.upcomingCharges.isEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
               child: Row(
                 children: [
+                  Icon(Icons.task_alt_rounded, color: colorScheme.onSurfaceVariant, size: 20),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
-                    child:
-                        Text('Prochaines échéances', style: Theme.of(context).textTheme.titleMedium),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const ChargesPage(),
-                    )),
-                    child: const Text('Voir toutes'),
+                    child: Text(
+                      'Aucune échéance à venir',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
                   ),
                 ],
               ),
             ),
-            if (data.upcomingCharges.isEmpty)
-              Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(AppSpacing.xl, AppSpacing.md, AppSpacing.xl, AppSpacing.md),
-                child: Row(
-                  children: [
-                    Icon(Icons.task_alt_rounded, color: colorScheme.onSurfaceVariant, size: 20),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        'Aucune échéance à venir',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(color: colorScheme.onSurfaceVariant),
-                      ),
-                    ),
-                  ],
-                ),
-              )
-            else
-              for (final charge in data.upcomingCharges)
-                _UpcomingChargeTile(charge: charge, cycleId: data.cycleId),
+          )
+        else
+          for (final charge in data.upcomingCharges) ...[
+            _UpcomingChargeCard(charge: charge, cycleId: data.cycleId),
+            const SizedBox(height: AppSpacing.sm),
           ],
-        ),
-      ),
+      ],
     );
   }
 }
 
-class _UpcomingChargeTile extends StatelessWidget {
+class _UpcomingChargeCard extends StatelessWidget {
   final FixedExpenseEntity charge;
   final int cycleId;
-  const _UpcomingChargeTile({required this.charge, required this.cycleId});
+  const _UpcomingChargeCard({required this.charge, required this.cycleId});
 
   @override
   Widget build(BuildContext context) {
     final presentation = ChargeStatusPresentation.of(charge.status, context);
     final colorScheme = Theme.of(context).colorScheme;
 
-    return InkWell(
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => FixedExpenseFormPage(cycleId: cycleId, existing: charge),
-      )),
+    return PremiumTapCard(
+      color: colorScheme.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(AppRadii.md),
+      onTap: () => showChargeDetailSheet(context, charge: charge, cycleId: cycleId),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.sm),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         child: Row(
           children: [
-            Icon(presentation.icon, size: 18, color: presentation.color),
+            Container(
+              width: 34,
+              height: 34,
+              decoration:
+                  BoxDecoration(color: presentation.color.withValues(alpha: 0.16), shape: BoxShape.circle),
+              child: Icon(presentation.icon, size: 17, color: presentation.color),
+            ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
@@ -553,13 +592,26 @@ class _UpcomingChargeTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                  Text('${formatDayMonthFr(charge.expectedDate)} · ${presentation.label}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                  Row(
+                    children: [
+                      Text(formatDayMonthFr(charge.expectedDate),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                      const SizedBox(width: AppSpacing.xs),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: presentation.color.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(AppRadii.sm),
+                        ),
+                        child: Text(presentation.label,
+                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: presentation.color, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

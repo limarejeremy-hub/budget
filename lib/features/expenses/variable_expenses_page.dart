@@ -4,16 +4,35 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/entries_providers.dart';
+import '../../core/routing/app_page_route.dart';
+import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
+import '../../core/widgets/premium_search_bar.dart';
+import '../../core/widgets/premium_tap_card.dart';
 import '../../domain/entities/variable_expense_entity.dart';
 import '../entries/variable_expense_form_page.dart';
 
-/// Onglet "Dépenses" : liste des dépenses variables du cycle courant.
-class VariableExpensesPage extends ConsumerWidget {
+/// Onglet "Dépenses" : liste premium des dépenses variables du cycle
+/// courant — recherche, tri par date, cartes.
+class VariableExpensesPage extends ConsumerStatefulWidget {
   const VariableExpensesPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<VariableExpensesPage> createState() => _VariableExpensesPageState();
+}
+
+class _VariableExpensesPageState extends ConsumerState<VariableExpensesPage> {
+  final _searchController = TextEditingController();
+  bool _sortAscending = false;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cycleAsync = ref.watch(currentCycleProvider);
     final expensesAsync = ref.watch(variableExpensesProvider);
     final cycleId = cycleAsync.valueOrNull?.id;
@@ -30,14 +49,40 @@ class VariableExpensesPage extends ConsumerWidget {
                   if (expenses.isEmpty) {
                     return const Center(child: Text('Aucune dépense variable pour ce cycle'));
                   }
-                  final sorted = [...expenses]..sort((a, b) => b.date.compareTo(a.date));
-                  return ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 88),
-                    itemCount: sorted.length,
-                    itemBuilder: (context, index) {
-                      final expense = sorted[index];
-                      return _ExpenseTile(expense: expense, cycleId: cycleId);
-                    },
+
+                  final query = _searchController.text.trim().toLowerCase();
+                  final filtered = expenses
+                      .where((e) => query.isEmpty || (e.name ?? '').toLowerCase().contains(query))
+                      .toList()
+                    ..sort((a, b) =>
+                        _sortAscending ? a.date.compareTo(b.date) : b.date.compareTo(a.date));
+
+                  return Column(
+                    children: [
+                      PremiumSearchBar(
+                        controller: _searchController,
+                        hintText: 'Rechercher une dépense',
+                        sortAscending: _sortAscending,
+                        sortTooltip: 'Trier par date',
+                        onToggleSort: () => setState(() => _sortAscending = !_sortAscending),
+                      ),
+                      Expanded(
+                        child: filtered.isEmpty
+                            ? Center(
+                                child: Text('Aucun résultat',
+                                    style: Theme.of(context).textTheme.bodyMedium))
+                            : ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(
+                                    AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 88),
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
+                                itemBuilder: (context, index) {
+                                  final expense = filtered[index];
+                                  return _ExpenseCard(expense: expense, cycleId: cycleId);
+                                },
+                              ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -45,7 +90,7 @@ class VariableExpensesPage extends ConsumerWidget {
       floatingActionButton: cycleId == null
           ? null
           : FloatingActionButton(
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              onPressed: () => Navigator.of(context).push(AppPageRoute(
                 builder: (_) => VariableExpenseFormPage(cycleId: cycleId),
               )),
               child: const Icon(Icons.add),
@@ -54,36 +99,67 @@ class VariableExpensesPage extends ConsumerWidget {
   }
 }
 
-class _ExpenseTile extends ConsumerWidget {
+class _ExpenseCard extends ConsumerWidget {
   final VariableExpenseEntity expense;
   final int cycleId;
-  const _ExpenseTile({required this.expense, required this.cycleId});
+  const _ExpenseCard({required this.expense, required this.cycleId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final title = (expense.name == null || expense.name!.isEmpty) ? 'Dépense' : expense.name!;
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(formatDayMonthFr(expense.date)),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(formatCentsAsEuro(expense.amountCents)),
-          IconButton(
-            icon: const Icon(Icons.delete_outline),
-            tooltip: 'Supprimer',
-            onPressed: () async {
-              final confirmed = await confirmDelete(context, title: 'Supprimer "$title" ?');
-              if (confirmed) {
-                await ref.read(cycleRepositoryProvider).deleteVariableExpense(expense.id);
-              }
-            },
-          ),
-        ],
-      ),
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return PremiumTapCard(
+      color: Color.alphaBlend(
+          CategoryColors.variableExpense.withValues(alpha: 0.07), colorScheme.surfaceContainerHigh),
+      borderRadius: BorderRadius.circular(AppRadii.md),
+      onTap: () => Navigator.of(context).push(AppPageRoute(
         builder: (_) => VariableExpenseFormPage(cycleId: cycleId, existing: expense),
       )),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                  color: CategoryColors.variableExpense.withValues(alpha: 0.16), shape: BoxShape.circle),
+              child: const Icon(Icons.shopping_bag_rounded, size: 17, color: CategoryColors.variableExpense),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(formatDayMonthFr(expense.date),
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+            Text(formatCentsAsEuro(expense.amountCents),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, size: 20),
+              tooltip: 'Supprimer',
+              onPressed: () async {
+                final confirmed = await confirmDelete(context, title: 'Supprimer "$title" ?');
+                if (confirmed) {
+                  await ref.read(cycleRepositoryProvider).deleteVariableExpense(expense.id);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
