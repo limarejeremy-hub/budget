@@ -45,4 +45,10 @@ depuis Paramètres).
   "Résumé rapide", reconnaissance automatique de marques connues avec badge monogramme
   extensible et repli générique, apparition en cascade des listes, design system unifié
   (champs, dialogues, BottomSheets, boutons, chips))
+- Phase 7 (V0.7) — Module Crédits : ✅ (suivi complet des crédits en cours — indépendant des
+  cycles budgétaires —, carte "Crédits" cliquable sur l'accueil, CRUD complet, tri par
+  priorité au choix de l'utilisateur, indicateurs comparatifs, simulation simplifiée de
+  versement anticipé, crédits inclus dans la sauvegarde export/import avec compatibilité
+  ascendante ; suppression de "Résumé rapide", section "Cette semaine" compacte quand vide,
+  indicateur "Jour X / Y" sur la progression du cycle, finitions de la carte Argent Libre)
 - Statistiques avancées, synchronisation bancaire : à venir

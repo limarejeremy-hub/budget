@@ -20,6 +20,7 @@ import '../../domain/entities/fixed_expense_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import '../charges/charge_detail_sheet.dart';
 import '../charges/charges_page.dart';
+import '../credits/widgets/credits_summary_card.dart';
 import '../cycle/cycle_creation_page.dart';
 import '../cycle/cycle_detail_page.dart';
 import '../entries/incomes_list_page.dart';
@@ -28,7 +29,6 @@ import '../expenses/variable_expenses_page.dart';
 import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
 import 'widgets/cycle_progress_bar.dart';
-import 'widgets/quick_summary_section.dart';
 import 'widgets/this_week_section.dart';
 import 'widgets/today_section.dart';
 
@@ -144,12 +144,12 @@ class _DashboardContent extends StatelessWidget {
             TodaySection(data: data),
             const SizedBox(height: AppSpacing.lg),
             ThisWeekSection(data: data),
-            const SizedBox(height: AppSpacing.lg),
-            QuickSummarySection(data: data),
             const SizedBox(height: AppSpacing.xxl),
             Text('Résumé du cycle', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.md),
             _CycleSummaryGrid(data: data),
+            const SizedBox(height: AppSpacing.xl),
+            const CreditsSummaryCard(),
             const SizedBox(height: AppSpacing.xxl),
             _UpcomingChargesSection(data: data),
             if (data.declaredBankBalanceCents != null) ...[
@@ -284,7 +284,7 @@ class _ArgentLibreCard extends StatelessWidget {
               ),
               const Positioned.fill(child: ShimmerSheen(borderRadius: AppRadii.xl)),
               Positioned(
-                top: 0,
+                top: 2,
                 left: 0,
                 child: EmvChip(width: 32, color: accent),
               ),
@@ -343,9 +343,23 @@ class _ArgentLibreCard extends StatelessWidget {
                 ],
               ),
               Positioned(
-                top: 0,
+                top: 2,
                 right: 0,
-                child: BudgetPilotMark(size: 22, color: accent.withValues(alpha: 0.65)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'PREMIUM',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: accent.withValues(alpha: 0.55),
+                            letterSpacing: 2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    BudgetPilotMark(size: 20, color: accent.withValues(alpha: 0.65)),
+                  ],
+                ),
               ),
             ],
           ),

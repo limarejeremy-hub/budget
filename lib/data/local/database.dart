@@ -113,6 +113,27 @@ class AppSettingsTable extends Table {
   BoolColumn get biometricEnabled => boolean().withDefault(const Constant(false))();
 }
 
+/// Crédits en cours — indépendants des cycles budgétaires (un prêt ne se
+/// réinitialise pas à chaque cycle, contrairement aux revenus/charges).
+class Credits extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text()();
+  IntColumn get initialAmountCents => integer()();
+  IntColumn get remainingCapitalCents => integer()();
+  IntColumn get monthlyPaymentCents => integer()();
+  RealColumn get annualRatePercent => real().nullable()();
+  DateTimeColumn get startDate => dateTime().nullable()();
+  DateTimeColumn get expectedEndDate => dateTime()();
+  IntColumn get remainingInstallments => integer()();
+  TextColumn get creditType => text().nullable()();
+  BoolColumn get earlyRepaymentAllowed => boolean().withDefault(const Constant(true))();
+  IntColumn get earlyRepaymentPenaltyCents => integer().nullable()();
+  TextColumn get notes => text().nullable()();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+}
+
 @DriftDatabase(tables: [
   Categories,
   RecurringTemplates,
@@ -122,6 +143,7 @@ class AppSettingsTable extends Table {
   VariableExpenses,
   Savings,
   AppSettingsTable,
+  Credits,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -130,7 +152,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -138,6 +160,9 @@ class AppDatabase extends _$AppDatabase {
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.addColumn(budgetCycles, budgetCycles.name);
+          }
+          if (from < 3) {
+            await m.createTable(credits);
           }
         },
       );

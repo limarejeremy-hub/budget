@@ -1,3 +1,4 @@
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,13 +7,23 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:budgetpilot/core/constants/app_constants.dart';
 import 'package:budgetpilot/core/formatting/currency_formatter.dart';
 import 'package:budgetpilot/core/providers/dashboard_providers.dart';
+import 'package:budgetpilot/core/providers/database_provider.dart';
+import 'package:budgetpilot/data/local/database.dart';
 import 'package:budgetpilot/domain/entities/fixed_expense_entity.dart';
 import 'package:budgetpilot/domain/entities/income_entity.dart';
 import 'package:budgetpilot/domain/models/dashboard_view_data.dart';
 import 'package:budgetpilot/features/dashboard/dashboard_page.dart';
 
+// Carte Crédits du tableau de bord : watch un provider indépendant du
+// cycle (base de données réelle) — une base en mémoire est donc fournie à
+// chaque test pour éviter tout accès à path_provider (indisponible en test).
+late AppDatabase _db;
+
 Widget _wrap(Widget child, List<Override> overrides) {
-  return ProviderScope(overrides: overrides, child: MaterialApp(home: child));
+  return ProviderScope(
+    overrides: [appDatabaseProvider.overrideWith((ref) => _db), ...overrides],
+    child: MaterialApp(home: child),
+  );
 }
 
 DashboardViewData _sampleData({
@@ -52,6 +63,12 @@ void main() {
   setUpAll(() async {
     await initializeDateFormatting('fr_FR', null);
   });
+
+  setUp(() {
+    _db = AppDatabase.forTesting(NativeDatabase.memory());
+  });
+
+  tearDown(() => _db.close());
 
   group('Carte Argent Libre', () {
     testWidgets('affiche le libellé et le montant formaté', (tester) async {
@@ -135,24 +152,23 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      // Le même décompte apparaît à la fois sous la carte du résumé du
-      // cycle et dans la section "Résumé rapide".
-      expect(find.text('1 revenu'), findsNWidgets(2));
-      expect(find.text('3 prélèvements'), findsNWidgets(2));
-      expect(find.text('2 dépenses'), findsNWidgets(2));
-      expect(find.text('1 épargne'), findsNWidgets(2));
+      expect(find.text('1 revenu'), findsOneWidget);
+      expect(find.text('3 prélèvements'), findsOneWidget);
+      expect(find.text('2 dépenses'), findsOneWidget);
+      expect(find.text('1 épargne'), findsOneWidget);
       expect(find.textContaining('%'), findsNothing);
     });
   });
 
   group('Cette semaine', () {
-    testWidgets("affiche l'état vide quand rien n'est prévu", (tester) async {
+    testWidgets("affiche une version compacte quand rien n'est prévu", (tester) async {
       await _pumpDashboard(tester, _sampleData());
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      expect(find.text('Cette semaine'), findsOneWidget);
       expect(find.text('Aucune opération prévue cette semaine'), findsOneWidget);
+      // Pas la grande carte avec en-tête : version compacte, une seule ligne.
+      expect(find.byIcon(Icons.view_week_rounded), findsNothing);
     });
 
     testWidgets('affiche les opérations planifiées dans les 7 prochains jours', (tester) async {
@@ -182,39 +198,9 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      expect(find.text('Cette semaine'), findsOneWidget);
+      expect(find.byIcon(Icons.view_week_rounded), findsOneWidget);
       expect(find.text('Abonnement box'), findsOneWidget);
-    });
-  });
-
-  group('Résumé rapide', () {
-    testWidgets('affiche un décompte des saisies par catégorie', (tester) async {
-      final data = DashboardViewData(
-        cycleId: 1,
-        cycleStart: DateTime(2026, 7, 27),
-        cycleEnd: DateTime(2026, 8, 26),
-        totalIncomeCents: 420000,
-        totalFixedExpensesCents: 7000,
-        totalVariableExpensesCents: 1500,
-        totalSavingsCents: 2000,
-        realRemainingCents: 122300,
-        remainingRatio: 0.24,
-        unconfirmedChargesCount: 0,
-        unconfirmedChargesTotalCents: 0,
-        incomesCount: 4,
-        fixedExpensesCount: 8,
-        variableExpensesCount: 15,
-        savingsCount: 2,
-      );
-      await _pumpDashboard(tester, data);
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      expect(find.text('Résumé rapide'), findsOneWidget);
-      // Le même décompte apparaît aussi sous la carte du résumé du cycle.
-      expect(find.text('4 revenus'), findsNWidgets(2));
-      expect(find.text('8 prélèvements'), findsNWidgets(2));
-      expect(find.text('15 dépenses'), findsNWidgets(2));
-      expect(find.text('2 épargnes'), findsNWidgets(2));
     });
   });
 
@@ -317,12 +303,24 @@ void main() {
   });
 
   group('Progression du cycle', () {
-    testWidgets('affiche le nombre de jours restants dans le cycle', (tester) async {
+    testWidgets('affiche le nombre de jours restants et "Jour X / Y"', (tester) async {
       await _pumpDashboard(tester, _sampleData());
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
       expect(find.textContaining('dans ce cycle'), findsOneWidget);
+      expect(find.textContaining('Jour '), findsOneWidget);
+    });
+  });
+
+  group('Carte Crédits', () {
+    testWidgets("affiche 'Aucun crédit en cours' quand la base est vide", (tester) async {
+      await _pumpDashboard(tester, _sampleData());
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Crédits'), findsOneWidget);
+      expect(find.text('Aucun crédit en cours'), findsOneWidget);
     });
   });
 }

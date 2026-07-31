@@ -7,6 +7,10 @@ import '../../../domain/models/dashboard_view_data.dart';
 /// Section "Cette semaine" — les prochaines opérations planifiées dans les
 /// 7 jours à venir (hors aujourd'hui, déjà couvert par "Aujourd'hui").
 /// Purement présentationnel : construit à partir de [DashboardViewData].
+///
+/// Quand elle est vide, la section reste volontairement minimale (une seule
+/// ligne compacte, sans grande carte ni espace vide) ; dès qu'il y a des
+/// opérations, elle s'agrandit naturellement pour les afficher.
 class ThisWeekSection extends StatelessWidget {
   final DashboardViewData data;
   const ThisWeekSection({super.key, required this.data});
@@ -43,6 +47,10 @@ class ThisWeekSection extends StatelessWidget {
         ),
     ]..sort((a, b) => a.date.compareTo(b.date));
 
+    if (rows.isEmpty) {
+      return const _CompactEmptyThisWeek();
+    }
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -57,10 +65,7 @@ class ThisWeekSection extends StatelessWidget {
               ],
             ),
             const SizedBox(height: AppSpacing.md),
-            if (rows.isEmpty)
-              _EmptyWeek()
-            else
-              for (final row in rows) row,
+            for (final row in rows) row,
           ],
         ),
       ),
@@ -68,21 +73,32 @@ class ThisWeekSection extends StatelessWidget {
   }
 }
 
-class _EmptyWeek extends StatelessWidget {
+/// Version compacte affichée lorsque rien n'est prévu cette semaine — une
+/// seule ligne discrète, pas une grande carte.
+class _CompactEmptyThisWeek extends StatelessWidget {
+  const _CompactEmptyThisWeek();
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Row(
-      children: [
-        Icon(Icons.event_available_rounded, size: 18, color: colorScheme.onSurfaceVariant),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: Text(
-            'Aucune opération prévue cette semaine',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.event_available_rounded, size: 16, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              'Aucune opération prévue cette semaine',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

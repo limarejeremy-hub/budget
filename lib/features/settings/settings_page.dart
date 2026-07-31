@@ -215,7 +215,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.file_upload_outlined),
               title: const Text('Exporter une sauvegarde'),
-              subtitle: const Text('Fichier JSON local — cycles, revenus, charges, dépenses, épargnes'),
+              subtitle: const Text('Fichier JSON local — cycles, revenus, charges, dépenses, épargnes, crédits'),
               enabled: !_backupBusy,
               onTap: _exportBackup,
             ),
@@ -238,7 +238,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 0.6.0'),
+              subtitle: const Text('Version 0.7.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[

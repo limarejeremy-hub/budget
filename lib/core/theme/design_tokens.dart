@@ -29,6 +29,7 @@ class CategoryColors {
   static const Color fixedExpense = Color(0xFFF2A93B); // orange — charges
   static const Color variableExpense = Color(0xFF3FBE7A); // vert — dépenses
   static const Color saving = Color(0xFFA07CF2); // violet — épargne
+  static const Color credit = Color(0xFFB08968); // cuivre — crédits (ni alarmiste, ni rouge vif)
 }
 
 /// Dégradé "or" premium de la carte Argent Libre, et couleurs d'accent

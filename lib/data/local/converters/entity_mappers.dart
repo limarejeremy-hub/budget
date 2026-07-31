@@ -1,5 +1,6 @@
 import '../../../core/constants/app_constants.dart';
 import '../../../domain/calculations/charge_status_service.dart';
+import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/fixed_expense_entity.dart';
 import '../../../domain/entities/income_entity.dart';
 import '../../../domain/entities/saving_entity.dart';
@@ -71,4 +72,23 @@ SavingEntity savingFromRow(Saving row) => SavingEntity(
       status: row.status,
       isRecurring: row.isRecurring,
       isActive: row.isActive,
+    );
+
+CreditEntity creditFromRow(Credit row) => CreditEntity(
+      id: row.id,
+      name: row.name,
+      initialAmountCents: row.initialAmountCents,
+      remainingCapitalCents: row.remainingCapitalCents,
+      monthlyPaymentCents: row.monthlyPaymentCents,
+      annualRatePercent: row.annualRatePercent,
+      startDate: row.startDate,
+      expectedEndDate: row.expectedEndDate,
+      remainingInstallments: row.remainingInstallments,
+      creditType: row.creditType,
+      earlyRepaymentAllowed: row.earlyRepaymentAllowed,
+      earlyRepaymentPenaltyCents: row.earlyRepaymentPenaltyCents,
+      notes: row.notes,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     );

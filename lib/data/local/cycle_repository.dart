@@ -360,6 +360,87 @@ class CycleRepository {
   }
 
   // ---------------------------------------------------------------------
+  // Crédits — indépendants des cycles budgétaires.
+  // ---------------------------------------------------------------------
+
+  Future<List<Credit>> loadCredits() =>
+      (db.select(db.credits)..orderBy([(c) => OrderingTerm.asc(c.expectedEndDate)])).get();
+
+  Stream<List<Credit>> watchCredits() =>
+      (db.select(db.credits)..orderBy([(c) => OrderingTerm.asc(c.expectedEndDate)])).watch();
+
+  Future<int> createCredit({
+    required String name,
+    required int initialAmountCents,
+    required int remainingCapitalCents,
+    required int monthlyPaymentCents,
+    double? annualRatePercent,
+    DateTime? startDate,
+    required DateTime expectedEndDate,
+    required int remainingInstallments,
+    String? creditType,
+    bool earlyRepaymentAllowed = true,
+    int? earlyRepaymentPenaltyCents,
+    String? notes,
+  }) {
+    return db.into(db.credits).insert(CreditsCompanion.insert(
+          name: name,
+          initialAmountCents: initialAmountCents,
+          remainingCapitalCents: remainingCapitalCents,
+          monthlyPaymentCents: monthlyPaymentCents,
+          annualRatePercent: Value(annualRatePercent),
+          startDate: Value(startDate),
+          expectedEndDate: expectedEndDate,
+          remainingInstallments: remainingInstallments,
+          creditType: Value(creditType),
+          earlyRepaymentAllowed: Value(earlyRepaymentAllowed),
+          earlyRepaymentPenaltyCents: Value(earlyRepaymentPenaltyCents),
+          notes: Value(notes),
+        ));
+  }
+
+  Future<void> updateCredit({
+    required int id,
+    required String name,
+    required int initialAmountCents,
+    required int remainingCapitalCents,
+    required int monthlyPaymentCents,
+    double? annualRatePercent,
+    DateTime? startDate,
+    required DateTime expectedEndDate,
+    required int remainingInstallments,
+    String? creditType,
+    required bool earlyRepaymentAllowed,
+    int? earlyRepaymentPenaltyCents,
+    String? notes,
+  }) {
+    return (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
+      name: Value(name),
+      initialAmountCents: Value(initialAmountCents),
+      remainingCapitalCents: Value(remainingCapitalCents),
+      monthlyPaymentCents: Value(monthlyPaymentCents),
+      annualRatePercent: Value(annualRatePercent),
+      startDate: Value(startDate),
+      expectedEndDate: Value(expectedEndDate),
+      remainingInstallments: Value(remainingInstallments),
+      creditType: Value(creditType),
+      earlyRepaymentAllowed: Value(earlyRepaymentAllowed),
+      earlyRepaymentPenaltyCents: Value(earlyRepaymentPenaltyCents),
+      notes: Value(notes),
+      updatedAt: Value(DateTime.now()),
+    ));
+  }
+
+  Future<void> deleteCredit(int id) => (db.delete(db.credits)..where((t) => t.id.equals(id))).go();
+
+  Future<void> setCreditActive(int id, bool isActive) {
+    return (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
+      isActive: Value(isActive),
+      updatedAt: Value(DateTime.now()),
+    ));
+  }
+
+  // ---------------------------------------------------------------------
   // Sauvegarde (export / import JSON local)
   // ---------------------------------------------------------------------
 
@@ -435,10 +516,33 @@ class CycleRepository {
       });
     }
 
+    final credits = await db.select(db.credits).get();
+
     return {
       'formatVersion': backupFormatVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'cycles': cycleMaps,
+      // Champ additif : absent dans les sauvegardes antérieures à la V0.7,
+      // toujours traité comme une liste vide à l'import dans ce cas — la
+      // version du format n'a pas besoin de changer.
+      'credits': [
+        for (final c in credits)
+          {
+            'name': c.name,
+            'initialAmountCents': c.initialAmountCents,
+            'remainingCapitalCents': c.remainingCapitalCents,
+            'monthlyPaymentCents': c.monthlyPaymentCents,
+            'annualRatePercent': c.annualRatePercent,
+            'startDate': c.startDate?.toIso8601String(),
+            'expectedEndDate': c.expectedEndDate.toIso8601String(),
+            'remainingInstallments': c.remainingInstallments,
+            'creditType': c.creditType,
+            'earlyRepaymentAllowed': c.earlyRepaymentAllowed,
+            'earlyRepaymentPenaltyCents': c.earlyRepaymentPenaltyCents,
+            'notes': c.notes,
+            'isActive': c.isActive,
+          },
+      ],
     };
   }
 
@@ -483,6 +587,7 @@ class CycleRepository {
         await db.delete(db.fixedExpenses).go();
         await db.delete(db.incomes).go();
         await db.delete(db.budgetCycles).go();
+        await db.delete(db.credits).go();
       }
 
       await ensureDefaultCategories();
@@ -552,6 +657,28 @@ class CycleRepository {
                 isActive: Value(s['isActive'] as bool? ?? true),
               ));
         }
+      }
+
+      // Absent dans les sauvegardes antérieures à la V0.7 : traité comme une
+      // liste vide, sans erreur — compatibilité ascendante garantie.
+      for (final raw in (data['credits'] as List? ?? const [])) {
+        final c = raw as Map<String, dynamic>;
+        await db.into(db.credits).insert(CreditsCompanion.insert(
+              name: c['name'] as String,
+              initialAmountCents: c['initialAmountCents'] as int,
+              remainingCapitalCents: c['remainingCapitalCents'] as int,
+              monthlyPaymentCents: c['monthlyPaymentCents'] as int,
+              annualRatePercent: Value((c['annualRatePercent'] as num?)?.toDouble()),
+              startDate: Value(
+                  c['startDate'] == null ? null : DateTime.parse(c['startDate'] as String)),
+              expectedEndDate: DateTime.parse(c['expectedEndDate'] as String),
+              remainingInstallments: c['remainingInstallments'] as int,
+              creditType: Value(c['creditType'] as String?),
+              earlyRepaymentAllowed: Value(c['earlyRepaymentAllowed'] as bool? ?? true),
+              earlyRepaymentPenaltyCents: Value(c['earlyRepaymentPenaltyCents'] as int?),
+              notes: Value(c['notes'] as String?),
+              isActive: Value(c['isActive'] as bool? ?? true),
+            ));
       }
 
       return importedCycles;

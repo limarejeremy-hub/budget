@@ -96,5 +96,26 @@ class DashboardViewData {
     return (elapsed / totalDays).clamp(0.0, 1.0);
   }
 
+  /// Nombre total de jours du cycle, bornes incluses (ex : un cycle du
+  /// 27/07 au 26/08 compte 31 jours). Fonctionne pour tout cycle, y compris
+  /// les mois courts ou les durées personnalisées.
+  int totalDaysInclusive() {
+    final start = _dayOnly(cycleStart);
+    final end = _dayOnly(cycleEnd);
+    final total = end.difference(start).inDays + 1;
+    return total < 1 ? 1 : total;
+  }
+
+  /// Numéro du jour courant dans le cycle (le jour de départ est le jour 1),
+  /// toujours compris entre 1 et [totalDaysInclusive]. Utilisé pour
+  /// l'affichage "Jour X / Y".
+  int currentDayNumber({DateTime? now}) {
+    final today = _dayOnly(now ?? DateTime.now());
+    final start = _dayOnly(cycleStart);
+    final total = totalDaysInclusive();
+    final elapsed = today.difference(start).inDays + 1;
+    return elapsed.clamp(1, total);
+  }
+
   static DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 }

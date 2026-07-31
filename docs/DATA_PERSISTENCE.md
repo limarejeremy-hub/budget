@@ -1,9 +1,9 @@
 # Conservation des données — BudgetPilot
 
 Ce document explique précisément dans quels cas les données locales de
-BudgetPilot (cycles, revenus, charges fixes, dépenses variables, épargnes)
-sont conservées d'une version de l'app à l'autre, dans quels cas elles
-peuvent être perdues, et pourquoi.
+BudgetPilot (cycles, revenus, charges fixes, dépenses variables, épargnes,
+crédits) sont conservées d'une version de l'app à l'autre, dans quels cas
+elles peuvent être perdues, et pourquoi.
 
 ## Où sont stockées les données
 
@@ -61,6 +61,10 @@ fichier, sur l'appareil. C'est pourquoi la fonction de sauvegarde manuelle
 - `test/data/migration_test.dart` vérifie qu'une base simulant le schéma v1
   (avant l'ajout de la colonne `BudgetCycles.name`) migre vers le schéma
   actuel sans perdre aucune donnée existante.
+- `test/data/credit_migration_test.dart` vérifie qu'une base simulant le
+  schéma v2 (avant l'ajout de la table `Credits`) migre vers v3 sans perdre
+  aucune donnée existante, et que la table crédits est utilisable après
+  migration.
 
 ## ❌ Les données PEUVENT être perdues quand…
 
@@ -125,15 +129,19 @@ réinstallation.
 Paramètres → Sauvegarde :
 
 - **Exporter une sauvegarde** : génère un fichier JSON local (cycles,
-  revenus, charges fixes, dépenses variables, épargnes — aucune donnée
-  bancaire sensible comme des identifiants ou des IBAN) et laisse
-  l'utilisateur choisir où l'enregistrer.
+  revenus, charges fixes, dépenses variables, épargnes, **crédits** —
+  aucune donnée bancaire sensible comme des identifiants ou des IBAN) et
+  laisse l'utilisateur choisir où l'enregistrer.
 - **Importer une sauvegarde** : sélectionne un fichier JSON, le valide
   (format et champs obligatoires) avant toute écriture, puis demande
-  confirmation pour **fusionner** (ajouter les cycles importés aux données
-  actuelles) ou **remplacer** (supprimer les données actuelles avant
-  d'importer). L'import est transactionnel : en cas d'erreur, aucune donnée
-  n'est modifiée.
+  confirmation pour **fusionner** (ajouter les cycles et crédits importés
+  aux données actuelles) ou **remplacer** (supprimer les données actuelles
+  avant d'importer, crédits compris). L'import est transactionnel : en cas
+  d'erreur, aucune donnée n'est modifiée.
+- **Compatibilité ascendante** : une sauvegarde exportée par une version de
+  BudgetPilot antérieure à la V0.7 (sans champ `credits`) s'importe
+  normalement — le champ est simplement absent, traité comme une liste
+  vide, sans erreur. Testé par `test/data/backup_test.dart`.
 
 Aucun envoi vers un service cloud n'est effectué — le fichier reste local
 jusqu'à ce que l'utilisateur choisisse de le déplacer lui-même.
