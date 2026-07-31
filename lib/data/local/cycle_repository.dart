@@ -366,8 +366,16 @@ class CycleRepository {
   Future<List<Credit>> loadCredits() =>
       (db.select(db.credits)..orderBy([(c) => OrderingTerm.asc(c.expectedEndDate)])).get();
 
-  Stream<List<Credit>> watchCredits() =>
-      (db.select(db.credits)..orderBy([(c) => OrderingTerm.asc(c.expectedEndDate)])).watch();
+  /// Basé sur `tableUpdates` (comme [watchCurrentCycleData]) plutôt que sur
+  /// le `.watch()` natif d'une requête Drift : ce dernier programme un
+  /// timer interne à la fermeture de l'abonnement qui reste "pending" tant
+  /// qu'aucune frame supplémentaire n'est pompée — inoffensif en usage réel,
+  /// mais fait échouer `testWidgets` (qui exige qu'aucun timer ne traîne à
+  /// la fin d'un test).
+  Stream<List<Credit>> watchCredits() async* {
+    yield await loadCredits();
+    yield* db.tableUpdates(TableUpdateQuery.onAllTables([db.credits])).asyncMap((_) => loadCredits());
+  }
 
   Future<int> createCredit({
     required String name,

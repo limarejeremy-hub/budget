@@ -57,6 +57,12 @@ Future<void> _pumpDashboard(WidgetTester tester, DashboardViewData data) async {
     [dashboardProvider.overrideWith((ref) => Stream.value(data))],
   ));
   await tester.pump();
+  // La carte Crédits watch un vrai provider (base en mémoire) dont la
+  // première valeur arrive après un `await` réel — contrairement à
+  // `dashboardProvider` ici substitué par un Stream.value synchrone, il
+  // faut donc une frame supplémentaire pour qu'elle sorte de son état de
+  // chargement initial.
+  await tester.pump();
 }
 
 void main() {

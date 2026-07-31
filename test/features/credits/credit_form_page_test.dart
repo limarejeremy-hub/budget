@@ -31,7 +31,19 @@ void main() {
 
   tearDown(() => db.close());
 
+  // Le formulaire Crédit compte une quinzaine de champs : un viewport de
+  // test haut est nécessaire pour que le bouton "Enregistrer", tout en bas,
+  // soit effectivement construit (ListView reste "lazy" même à contenu
+  // statique) et atteignable par tap() sans avoir à défiler.
+  void useTallViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 3200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   testWidgets('affiche des erreurs de validation si le formulaire est vide', (tester) async {
+    useTallViewport(tester);
     await tester.pumpWidget(wrap(const CreditFormPage()));
     await tester.pumpAndSettle();
 
@@ -44,6 +56,7 @@ void main() {
   });
 
   testWidgets('un formulaire valide crée bien le crédit en base', (tester) async {
+    useTallViewport(tester);
     await tester.pumpWidget(wrap(const CreditFormPage()));
     await tester.pumpAndSettle();
 
@@ -69,11 +82,14 @@ void main() {
   });
 
   testWidgets('un taux invalide affiche une erreur', (tester) async {
+    useTallViewport(tester);
     await tester.pumpWidget(wrap(const CreditFormPage()));
     await tester.pumpAndSettle();
 
+    // Le champ ne laisse passer que chiffres/point/virgule (inputFormatters)
+    // — "1.2.3" est donc saisissable mais reste un nombre invalide.
     await tester.enterText(
-        find.widgetWithText(TextFormField, 'Taux annuel % (facultatif)'), 'abc');
+        find.widgetWithText(TextFormField, 'Taux annuel % (facultatif)'), '1.2.3');
     await tester.tap(find.text('Enregistrer'));
     await tester.pump();
 
