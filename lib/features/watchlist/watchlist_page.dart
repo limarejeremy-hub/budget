@@ -6,6 +6,7 @@ import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/entries_providers.dart';
 import '../../core/theme/charge_status_presentation.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/premium_tap_card.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../charges/charge_detail_sheet.dart';
@@ -89,7 +90,12 @@ class _WatchedChargeTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         child: Row(
           children: [
-            Icon(presentation.icon, color: presentation.color),
+            BrandBadge(
+              name: charge.name,
+              fallbackIcon: presentation.icon,
+              fallbackColor: presentation.color,
+              size: 34,
+            ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(

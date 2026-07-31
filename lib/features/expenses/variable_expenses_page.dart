@@ -6,9 +6,11 @@ import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/entries_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../core/widgets/premium_search_bar.dart';
 import '../../core/widgets/premium_tap_card.dart';
+import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/entities/variable_expense_entity.dart';
 import '../entries/variable_expense_form_page.dart';
 
@@ -78,7 +80,10 @@ class _VariableExpensesPageState extends ConsumerState<VariableExpensesPage> {
                                 separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
                                 itemBuilder: (context, index) {
                                   final expense = filtered[index];
-                                  return _ExpenseCard(expense: expense, cycleId: cycleId);
+                                  return StaggeredFadeIn(
+                                    index: index,
+                                    child: _ExpenseCard(expense: expense, cycleId: cycleId),
+                                  );
                                 },
                               ),
                       ),
@@ -120,12 +125,11 @@ class _ExpenseCard extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                  color: CategoryColors.variableExpense.withValues(alpha: 0.16), shape: BoxShape.circle),
-              child: const Icon(Icons.shopping_bag_rounded, size: 17, color: CategoryColors.variableExpense),
+            BrandBadge(
+              name: title,
+              fallbackIcon: Icons.shopping_bag_rounded,
+              fallbackColor: CategoryColors.variableExpense,
+              size: 34,
             ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(

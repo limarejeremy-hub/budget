@@ -238,7 +238,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 0.5.0'),
+              subtitle: const Text('Version 0.6.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[

@@ -40,4 +40,9 @@ depuis Paramètres).
   cycle, listes avec recherche/tri/filtres, fiche détaillée de charge (modifier / marquer
   prélevée / dupliquer / supprimer), thème clair/sombre/système persisté, écran Documentation,
   transitions de page, design system centralisé)
+- Phase 6 (V0.6) — Carte bancaire premium+ : ✅ (puce EMV et reflet animé sur la carte Argent
+  Libre, résumé du cycle en décompte — jamais de pourcentage —, sections "Cette semaine" et
+  "Résumé rapide", reconnaissance automatique de marques connues avec badge monogramme
+  extensible et repli générique, apparition en cascade des listes, design system unifié
+  (champs, dialogues, BottomSheets, boutons, chips))
 - Statistiques avancées, synchronisation bancaire : à venir

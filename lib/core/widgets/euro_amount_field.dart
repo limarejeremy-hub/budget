@@ -35,7 +35,6 @@ class EuroAmountField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: required ? label : '$label (facultatif)',
         suffixText: '€',
-        border: const OutlineInputBorder(),
       ),
       validator: (value) {
         final text = value?.trim() ?? '';

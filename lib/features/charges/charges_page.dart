@@ -7,8 +7,10 @@ import '../../core/providers/entries_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/charge_status_presentation.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/premium_search_bar.dart';
 import '../../core/widgets/premium_tap_card.dart';
+import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
 import 'charge_detail_sheet.dart';
@@ -93,7 +95,10 @@ class _ChargesPageState extends ConsumerState<ChargesPage> {
                                 separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
                                 itemBuilder: (context, index) {
                                   final charge = filtered[index];
-                                  return _ChargeCard(charge: charge, cycleId: cycleId);
+                                  return StaggeredFadeIn(
+                                    index: index,
+                                    child: _ChargeCard(charge: charge, cycleId: cycleId),
+                                  );
                                 },
                               ),
                       ),
@@ -166,12 +171,11 @@ class _ChargeCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration:
-                  BoxDecoration(color: presentation.color.withValues(alpha: 0.16), shape: BoxShape.circle),
-              child: Icon(presentation.icon, size: 17, color: presentation.color),
+            BrandBadge(
+              name: charge.name,
+              fallbackIcon: presentation.icon,
+              fallbackColor: presentation.color,
+              size: 34,
             ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(

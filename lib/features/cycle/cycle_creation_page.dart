@@ -98,7 +98,6 @@ class _CycleCreationPageState extends ConsumerState<CycleCreationPage> {
                 controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: 'Nom du cycle (facultatif)',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),

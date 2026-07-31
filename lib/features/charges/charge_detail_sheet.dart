@@ -7,6 +7,7 @@ import '../../core/providers/dashboard_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/charge_status_presentation.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
@@ -43,8 +44,21 @@ class ChargeDetailSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(charge.name, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: AppSpacing.xs),
+            Row(
+              children: [
+                BrandBadge(
+                  name: charge.name,
+                  fallbackIcon: presentation.icon,
+                  fallbackColor: presentation.color,
+                  size: 40,
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text(charge.name, style: Theme.of(context).textTheme.titleLarge),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
             Text(formatCentsAsEuro(charge.effectiveAmountCents),
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(height: AppSpacing.sm),

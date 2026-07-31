@@ -9,6 +9,7 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../core/widgets/premium_search_bar.dart';
 import '../../core/widgets/premium_tap_card.dart';
+import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/entities/saving_entity.dart';
 import 'saving_form_page.dart';
 
@@ -69,8 +70,10 @@ class _SavingsListPageState extends ConsumerState<SavingsListPage> {
                           padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, 88),
                           itemCount: filtered.length,
                           separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
-                          itemBuilder: (context, index) =>
-                              _SavingCard(saving: filtered[index], cycleId: widget.cycleId),
+                          itemBuilder: (context, index) => StaggeredFadeIn(
+                            index: index,
+                            child: _SavingCard(saving: filtered[index], cycleId: widget.cycleId),
+                          ),
                         ),
                 ),
               ],
