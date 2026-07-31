@@ -36,7 +36,10 @@ DashboardViewData _sampleData({
 }
 
 Future<void> _pumpDashboard(WidgetTester tester, DashboardViewData data) async {
-  tester.view.physicalSize = const Size(1080, 2400);
+  // Viewport haut pour que tout le contenu du tableau de bord (désormais
+  // enrichi de "Aujourd'hui", "Cette semaine" et "Résumé rapide") soit
+  // construit sans dépendre du défilement dans les tests.
+  tester.view.physicalSize = const Size(1080, 4200);
   tester.view.devicePixelRatio = 1.0;
   await tester.pumpWidget(_wrap(
     const DashboardPage(),
@@ -108,6 +111,110 @@ void main() {
 
       expect(find.text('Épargnes'), findsOneWidget);
       expect(find.text(formatCentsAsEuro(data.totalSavingsCents)), findsOneWidget);
+    });
+
+    testWidgets('affiche un décompte par catégorie, jamais un pourcentage', (tester) async {
+      final data = DashboardViewData(
+        cycleId: 1,
+        cycleStart: DateTime(2026, 7, 27),
+        cycleEnd: DateTime(2026, 8, 26),
+        totalIncomeCents: 420000,
+        totalFixedExpensesCents: 7000,
+        totalVariableExpensesCents: 1500,
+        totalSavingsCents: 2000,
+        realRemainingCents: 122300,
+        remainingRatio: 0.24,
+        unconfirmedChargesCount: 0,
+        unconfirmedChargesTotalCents: 0,
+        incomesCount: 1,
+        fixedExpensesCount: 3,
+        variableExpensesCount: 2,
+        savingsCount: 1,
+      );
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // Le même décompte apparaît à la fois sous la carte du résumé du
+      // cycle et dans la section "Résumé rapide".
+      expect(find.text('1 revenu'), findsNWidgets(2));
+      expect(find.text('3 prélèvements'), findsNWidgets(2));
+      expect(find.text('2 dépenses'), findsNWidgets(2));
+      expect(find.text('1 épargne'), findsNWidgets(2));
+      expect(find.textContaining('%'), findsNothing);
+    });
+  });
+
+  group('Cette semaine', () {
+    testWidgets("affiche l'état vide quand rien n'est prévu", (tester) async {
+      await _pumpDashboard(tester, _sampleData());
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Cette semaine'), findsOneWidget);
+      expect(find.text('Aucune opération prévue cette semaine'), findsOneWidget);
+    });
+
+    testWidgets('affiche les opérations planifiées dans les 7 prochains jours', (tester) async {
+      final data = DashboardViewData(
+        cycleId: 1,
+        cycleStart: DateTime(2026, 7, 27),
+        cycleEnd: DateTime(2026, 8, 26),
+        totalIncomeCents: 515000,
+        totalFixedExpensesCents: 245000,
+        totalVariableExpensesCents: 67700,
+        totalSavingsCents: 80000,
+        realRemainingCents: 122300,
+        remainingRatio: 0.24,
+        unconfirmedChargesCount: 0,
+        unconfirmedChargesTotalCents: 0,
+        thisWeekFixedExpenses: [
+          FixedExpenseEntity(
+            id: 5,
+            cycleId: 1,
+            name: 'Abonnement box',
+            expectedAmountCents: 3990,
+            expectedDate: DateTime(2026, 8, 2),
+          ),
+        ],
+      );
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Abonnement box'), findsOneWidget);
+    });
+  });
+
+  group('Résumé rapide', () {
+    testWidgets('affiche un décompte des saisies par catégorie', (tester) async {
+      final data = DashboardViewData(
+        cycleId: 1,
+        cycleStart: DateTime(2026, 7, 27),
+        cycleEnd: DateTime(2026, 8, 26),
+        totalIncomeCents: 420000,
+        totalFixedExpensesCents: 7000,
+        totalVariableExpensesCents: 1500,
+        totalSavingsCents: 2000,
+        realRemainingCents: 122300,
+        remainingRatio: 0.24,
+        unconfirmedChargesCount: 0,
+        unconfirmedChargesTotalCents: 0,
+        incomesCount: 4,
+        fixedExpensesCount: 8,
+        variableExpensesCount: 15,
+        savingsCount: 2,
+      );
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('Résumé rapide'), findsOneWidget);
+      // Le même décompte apparaît aussi sous la carte du résumé du cycle.
+      expect(find.text('4 revenus'), findsNWidgets(2));
+      expect(find.text('8 prélèvements'), findsNWidgets(2));
+      expect(find.text('15 dépenses'), findsNWidgets(2));
+      expect(find.text('2 épargnes'), findsNWidgets(2));
     });
   });
 

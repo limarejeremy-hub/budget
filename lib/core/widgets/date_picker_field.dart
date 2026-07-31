@@ -36,7 +36,6 @@ class DatePickerField extends StatelessWidget {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          border: const OutlineInputBorder(),
           suffixIcon: const Icon(Icons.calendar_today_outlined),
         ),
         child: Text(formatted),

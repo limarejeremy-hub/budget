@@ -106,7 +106,7 @@ class _IncomeFormPageState extends ConsumerState<IncomeFormPage> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nom', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Nom'),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Nom requis' : null,
               ),
               const SizedBox(height: 16),

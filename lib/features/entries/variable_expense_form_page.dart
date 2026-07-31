@@ -99,7 +99,6 @@ class _VariableExpenseFormPageState extends ConsumerState<VariableExpenseFormPag
                 controller: _nameController,
                 decoration: const InputDecoration(
                   labelText: 'Nom ou description (facultatif)',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),
@@ -114,8 +113,7 @@ class _VariableExpenseFormPageState extends ConsumerState<VariableExpenseFormPag
                 error: (e, st) => const SizedBox.shrink(),
                 data: (categories) => DropdownButtonFormField<int?>(
                   initialValue: _categoryId,
-                  decoration:
-                      const InputDecoration(labelText: 'Catégorie', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: 'Catégorie'),
                   items: [
                     const DropdownMenuItem<int?>(value: null, child: Text('Aucune catégorie')),
                     for (final category in categories)

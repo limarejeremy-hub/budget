@@ -1,5 +1,6 @@
 import '../entities/fixed_expense_entity.dart';
 import '../entities/income_entity.dart';
+import '../entities/saving_entity.dart';
 
 /// Modèle de vue prêt à afficher — construit par [DashboardViewBuilder].
 class DashboardViewData {
@@ -34,6 +35,20 @@ class DashboardViewData {
   /// "Aujourd'hui".
   final List<FixedExpenseEntity> alerts;
 
+  /// Nombre de saisies actives par catégorie — affiché sous chaque carte du
+  /// résumé du cycle (ex : "3 prélèvements"), jamais de pourcentage.
+  final int incomesCount;
+  final int fixedExpensesCount;
+  final int variableExpensesCount;
+  final int savingsCount;
+
+  /// Opérations planifiées dans les 7 prochains jours (hors aujourd'hui,
+  /// déjà couvert par [todayFixedExpenses]/[todayIncomes]) — section
+  /// "Cette semaine".
+  final List<FixedExpenseEntity> thisWeekFixedExpenses;
+  final List<IncomeEntity> thisWeekIncomes;
+  final List<SavingEntity> thisWeekSavings;
+
   const DashboardViewData({
     required this.cycleId,
     required this.cycleStart,
@@ -52,6 +67,13 @@ class DashboardViewData {
     this.todayFixedExpenses = const [],
     this.todayIncomes = const [],
     this.alerts = const [],
+    this.incomesCount = 0,
+    this.fixedExpensesCount = 0,
+    this.variableExpensesCount = 0,
+    this.savingsCount = 0,
+    this.thisWeekFixedExpenses = const [],
+    this.thisWeekIncomes = const [],
+    this.thisWeekSavings = const [],
   });
 
   /// Nombre de jours restants dans le cycle (inclut aujourd'hui, jamais

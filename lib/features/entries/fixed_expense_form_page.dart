@@ -114,7 +114,7 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
             children: [
               TextFormField(
                 controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nom', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Nom'),
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'Nom requis' : null,
               ),
               const SizedBox(height: 16),
@@ -137,8 +137,7 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
                 error: (e, st) => const SizedBox.shrink(),
                 data: (categories) => DropdownButtonFormField<int?>(
                   initialValue: _categoryId,
-                  decoration:
-                      const InputDecoration(labelText: 'Catégorie', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: 'Catégorie'),
                   items: [
                     const DropdownMenuItem<int?>(value: null, child: Text('Aucune catégorie')),
                     for (final category in categories)

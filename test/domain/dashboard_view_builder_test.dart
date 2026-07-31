@@ -117,4 +117,64 @@ void main() {
     expect(result.daysRemaining(now: DateTime(2026, 8, 26)), 0);
     expect(result.daysRemaining(now: DateTime(2026, 9, 1)), 0);
   });
+
+  test('compte les saisies actives par catégorie, en excluant les inactives', () {
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      incomes: [
+        IncomeEntity(id: 1, cycleId: 1, name: 'Salaire', expectedAmountCents: 245000, expectedDate: cycleStart),
+        IncomeEntity(
+            id: 2, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: cycleStart, isActive: false),
+      ],
+      fixedExpenses: [
+        FixedExpenseEntity(id: 1, cycleId: 1, name: 'EDF', expectedAmountCents: 18000, expectedDate: cycleStart),
+        FixedExpenseEntity(id: 2, cycleId: 1, name: 'Internet', expectedAmountCents: 4000, expectedDate: cycleStart),
+      ],
+      variableExpenses: [
+        VariableExpenseEntity(id: 1, cycleId: 1, amountCents: 1500, date: cycleStart),
+      ],
+      savings: [
+        SavingEntity(id: 1, cycleId: 1, name: 'Mariage', expectedAmountCents: 80000, expectedDate: cycleStart),
+      ],
+    );
+
+    expect(result.incomesCount, 1);
+    expect(result.fixedExpensesCount, 2);
+    expect(result.variableExpensesCount, 1);
+    expect(result.savingsCount, 1);
+  });
+
+  test('identifie les opérations planifiées dans les 7 prochains jours ("cette semaine")', () {
+    final today = DateTime(2026, 8, 5);
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      now: today,
+      incomes: [
+        IncomeEntity(
+            id: 1, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 8)),
+        IncomeEntity(
+            id: 2, cycleId: 1, name: 'Trop tard', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 20)),
+      ],
+      fixedExpenses: [
+        FixedExpenseEntity(
+            id: 1, cycleId: 1, name: 'Box internet', expectedAmountCents: 4000, expectedDate: DateTime(2026, 8, 9)),
+        // Aujourd'hui même : déjà couvert par todayFixedExpenses, pas par "cette semaine".
+        FixedExpenseEntity(
+            id: 2, cycleId: 1, name: 'Aujourdhui', expectedAmountCents: 1000, expectedDate: today),
+      ],
+      variableExpenses: const [],
+      savings: [
+        SavingEntity(
+            id: 1, cycleId: 1, name: 'Livret', expectedAmountCents: 10000, expectedDate: DateTime(2026, 8, 6)),
+      ],
+    );
+
+    expect(result.thisWeekIncomes.map((i) => i.name), ['Prime']);
+    expect(result.thisWeekFixedExpenses.map((e) => e.name), ['Box internet']);
+    expect(result.thisWeekSavings.map((s) => s.name), ['Livret']);
+  });
 }

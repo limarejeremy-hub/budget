@@ -10,8 +10,12 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/charge_status_presentation.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/animated_amount.dart';
+import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/budgetpilot_logo.dart';
+import '../../core/widgets/emv_chip.dart';
 import '../../core/widgets/premium_tap_card.dart';
+import '../../core/widgets/shimmer_sheen.dart';
+import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import '../charges/charge_detail_sheet.dart';
@@ -24,6 +28,8 @@ import '../expenses/variable_expenses_page.dart';
 import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
 import 'widgets/cycle_progress_bar.dart';
+import 'widgets/quick_summary_section.dart';
+import 'widgets/this_week_section.dart';
 import 'widgets/today_section.dart';
 
 class DashboardPage extends ConsumerWidget {
@@ -136,6 +142,10 @@ class _DashboardContent extends StatelessWidget {
             CycleProgressBar(data: data),
             const SizedBox(height: AppSpacing.xxl),
             TodaySection(data: data),
+            const SizedBox(height: AppSpacing.lg),
+            ThisWeekSection(data: data),
+            const SizedBox(height: AppSpacing.lg),
+            QuickSummarySection(data: data),
             const SizedBox(height: AppSpacing.xxl),
             Text('Résumé du cycle', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.md),
@@ -272,6 +282,12 @@ class _ArgentLibreCard extends StatelessWidget {
                   ),
                 ),
               ),
+              const Positioned.fill(child: ShimmerSheen(borderRadius: AppRadii.xl)),
+              Positioned(
+                top: 0,
+                left: 0,
+                child: EmvChip(width: 32, color: accent),
+              ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -362,6 +378,10 @@ class _BrushedMetalPainter extends CustomPainter {
       oldDelegate.brightness != brightness;
 }
 
+/// "1 revenu" / "3 prélèvements" — jamais de pourcentage sous les cartes du
+/// résumé du cycle, uniquement un décompte lisible.
+String _countLabel(int count, String singular, String plural) => '$count ${count > 1 ? plural : singular}';
+
 class _CycleSummaryGrid extends StatelessWidget {
   final DashboardViewData data;
   const _CycleSummaryGrid({required this.data});
@@ -371,7 +391,7 @@ class _CycleSummaryGrid extends StatelessWidget {
     final items = <_SummaryItem>[
       _SummaryItem(
         label: 'Revenus',
-        subtext: 'Ce cycle',
+        subtext: _countLabel(data.incomesCount, 'revenu', 'revenus'),
         cents: data.totalIncomeCents,
         icon: Icons.trending_up_rounded,
         color: CategoryColors.income,
@@ -381,7 +401,7 @@ class _CycleSummaryGrid extends StatelessWidget {
       ),
       _SummaryItem(
         label: 'Charges',
-        subtext: 'Réservées',
+        subtext: _countLabel(data.fixedExpensesCount, 'prélèvement', 'prélèvements'),
         cents: data.totalFixedExpensesCents,
         icon: Icons.receipt_long_rounded,
         color: CategoryColors.fixedExpense,
@@ -391,7 +411,7 @@ class _CycleSummaryGrid extends StatelessWidget {
       ),
       _SummaryItem(
         label: 'Dépenses',
-        subtext: 'Ce cycle',
+        subtext: _countLabel(data.variableExpensesCount, 'dépense', 'dépenses'),
         cents: data.totalVariableExpensesCents,
         icon: Icons.shopping_bag_rounded,
         color: CategoryColors.variableExpense,
@@ -401,7 +421,7 @@ class _CycleSummaryGrid extends StatelessWidget {
       ),
       _SummaryItem(
         label: 'Épargnes',
-        subtext: 'Réservée',
+        subtext: _countLabel(data.savingsCount, 'épargne', 'épargnes'),
         cents: data.totalSavingsCents,
         icon: Icons.savings_rounded,
         color: CategoryColors.saving,
@@ -488,6 +508,10 @@ class _SummaryTile extends StatelessWidget {
                     cents: item.cents,
                     style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
                   ),
+                  Text(item.subtext,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
                 ],
               ),
             ),
@@ -548,8 +572,11 @@ class _UpcomingChargesSection extends StatelessWidget {
             ),
           )
         else
-          for (final charge in data.upcomingCharges) ...[
-            _UpcomingChargeCard(charge: charge, cycleId: data.cycleId),
+          for (final (index, charge) in data.upcomingCharges.indexed) ...[
+            StaggeredFadeIn(
+              index: index,
+              child: _UpcomingChargeCard(charge: charge, cycleId: data.cycleId),
+            ),
             const SizedBox(height: AppSpacing.sm),
           ],
       ],
@@ -575,12 +602,11 @@ class _UpcomingChargeCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration:
-                  BoxDecoration(color: presentation.color.withValues(alpha: 0.16), shape: BoxShape.circle),
-              child: Icon(presentation.icon, size: 17, color: presentation.color),
+            BrandBadge(
+              name: charge.name,
+              fallbackIcon: presentation.icon,
+              fallbackColor: presentation.color,
+              size: 34,
             ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(

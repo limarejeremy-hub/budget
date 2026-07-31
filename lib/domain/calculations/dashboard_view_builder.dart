@@ -65,6 +65,19 @@ class DashboardViewBuilder {
         .toList()
       ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
 
+    final weekEnd = todayOnly.add(const Duration(days: 7));
+    bool isThisWeek(DateTime d) {
+      final day = DateTime(d.year, d.month, d.day);
+      return day.isAfter(todayOnly) && !day.isAfter(weekEnd);
+    }
+
+    final thisWeekFixed = fixedExpenses.where((e) => e.isActive && isThisWeek(e.expectedDate)).toList()
+      ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
+    final thisWeekIncomes = incomes.where((i) => i.isActive && isThisWeek(i.expectedDate)).toList()
+      ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
+    final thisWeekSavings = savings.where((s) => s.isActive && isThisWeek(s.expectedDate)).toList()
+      ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
+
     return DashboardViewData(
       cycleId: cycleId,
       cycleStart: cycleStart,
@@ -84,6 +97,13 @@ class DashboardViewBuilder {
       todayFixedExpenses: todayFixed,
       todayIncomes: todayIncomes,
       alerts: alerts,
+      incomesCount: incomes.where((i) => i.isActive).length,
+      fixedExpensesCount: fixedExpenses.where((e) => e.isActive).length,
+      variableExpensesCount: variableExpenses.length,
+      savingsCount: savings.where((s) => s.isActive).length,
+      thisWeekFixedExpenses: thisWeekFixed,
+      thisWeekIncomes: thisWeekIncomes,
+      thisWeekSavings: thisWeekSavings,
     );
   }
 }
