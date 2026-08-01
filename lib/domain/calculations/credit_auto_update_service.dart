@@ -1,23 +1,19 @@
 import '../entities/credit_entity.dart';
 
-/// Prépare l'architecture de la V0.9 (décrémentation automatique d'un
-/// crédit lorsqu'une mensualité est payée, recalcul du capital restant et
-/// des mensualités restantes, mise à jour automatique du tableau de bord)
-/// — SANS activer cette fonctionnalité. Fonction pure, non appelée depuis
-/// l'application : aucun provider, aucun repository et aucune UI n'y fait
-/// référence pour l'instant. L'activation future consistera uniquement à
-/// brancher [applyMonthlyPayment] sur un déclencheur (ex : passage au
-/// cycle suivant), sans toucher à ce calcul.
+/// Décrémentation automatique d'un crédit lorsqu'une mensualité est payée
+/// (capital restant, mensualités restantes) — activée en V0.9 : branchée
+/// sur la confirmation d'une charge liée (`CycleRepository.confirmFixedExpense`).
+/// Reste un service de calcul pur, sans dépendance à Drift ni à Flutter.
 class CreditAutoUpdateService {
   const CreditAutoUpdateService();
 
-  /// Calcule l'état d'un crédit après le paiement d'une mensualité :
-  /// capital restant diminué de la mensualité (jamais sous zéro) et
-  /// mensualités restantes décrémentées d'une unité (jamais sous zéro).
-  /// Ne modifie jamais [credit] ; retourne toujours une nouvelle instance.
-  CreditEntity applyMonthlyPayment(CreditEntity credit) {
+  /// Calcule l'état d'un crédit après un versement de [paidCents] : capital
+  /// restant diminué de ce montant (jamais sous zéro) et mensualités
+  /// restantes décrémentées d'une unité (jamais sous zéro). Ne modifie
+  /// jamais [credit] ; retourne toujours une nouvelle instance.
+  CreditEntity applyPayment(CreditEntity credit, int paidCents) {
     final newRemainingCapital =
-        (credit.remainingCapitalCents - credit.monthlyPaymentCents).clamp(0, credit.remainingCapitalCents);
+        (credit.remainingCapitalCents - paidCents).clamp(0, credit.remainingCapitalCents);
     final newRemainingInstallments =
         (credit.remainingInstallments - 1).clamp(0, credit.remainingInstallments);
 
@@ -41,6 +37,25 @@ class CreditAutoUpdateService {
       organisme: credit.organisme,
       colorValue: credit.colorValue,
       iconCodePoint: credit.iconCodePoint,
+      paymentDayOfMonth: credit.paymentDayOfMonth,
+      insuranceCents: credit.insuranceCents,
     );
   }
+
+  /// Cas particulier de [applyPayment] : verse exactement la mensualité du
+  /// crédit (`credit.monthlyPaymentCents`).
+  CreditEntity applyMonthlyPayment(CreditEntity credit) => applyPayment(credit, credit.monthlyPaymentCents);
+}
+
+/// Résultat d'une décrémentation automatique appliquée lors de la
+/// confirmation d'une charge liée à un crédit.
+class CreditAutoUpdateResult {
+  final CreditEntity credit;
+
+  /// `true` si ce versement a soldé le crédit (capital restant ou
+  /// mensualités restantes tombés à zéro) — le crédit est alors
+  /// automatiquement marqué terminé.
+  final bool finished;
+
+  const CreditAutoUpdateResult({required this.credit, required this.finished});
 }

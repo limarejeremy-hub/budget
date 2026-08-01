@@ -31,6 +31,8 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
   late final TextEditingController _remainingInstallmentsController;
   late final TextEditingController _creditTypeController;
   late final TextEditingController _penaltyController;
+  late final TextEditingController _paymentDayController;
+  late final TextEditingController _insuranceController;
   late final TextEditingController _notesController;
   late DateTime _startDate;
   late DateTime _expectedEndDate;
@@ -67,6 +69,11 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
           ? ''
           : (existing!.earlyRepaymentPenaltyCents! / 100).toStringAsFixed(2),
     );
+    _paymentDayController =
+        TextEditingController(text: existing?.paymentDayOfMonth == null ? '' : existing!.paymentDayOfMonth.toString());
+    _insuranceController = TextEditingController(
+      text: existing?.insuranceCents == null ? '' : (existing!.insuranceCents! / 100).toStringAsFixed(2),
+    );
     _notesController = TextEditingController(text: existing?.notes ?? '');
     _startDate = existing?.startDate ?? DateTime.now();
     _expectedEndDate = existing?.expectedEndDate ?? DateTime.now().add(const Duration(days: 365));
@@ -91,6 +98,8 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
     _remainingInstallmentsController.dispose();
     _creditTypeController.dispose();
     _penaltyController.dispose();
+    _paymentDayController.dispose();
+    _insuranceController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -104,6 +113,8 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
     final remainingCents = EuroAmountField.parseCents(_remainingCapitalController.text)!;
     final monthlyCents = EuroAmountField.parseCents(_monthlyPaymentController.text)!;
     final penaltyCents = EuroAmountField.parseCents(_penaltyController.text);
+    final insuranceCents = EuroAmountField.parseCents(_insuranceController.text);
+    final paymentDayOfMonth = int.tryParse(_paymentDayController.text.trim());
     final rate = double.tryParse(_rateController.text.trim().replaceAll(',', '.'));
     final remainingInstallments = int.parse(_remainingInstallmentsController.text.trim());
     final creditType = _creditTypeController.text.trim().isEmpty ? null : _creditTypeController.text.trim();
@@ -131,6 +142,8 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
           organisme: organisme,
           colorValue: colorValue,
           iconCodePoint: iconCodePoint,
+          paymentDayOfMonth: paymentDayOfMonth,
+          insuranceCents: insuranceCents,
         );
       } else {
         await repository.createCredit(
@@ -149,6 +162,8 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
           organisme: organisme,
           colorValue: colorValue,
           iconCodePoint: iconCodePoint,
+          paymentDayOfMonth: paymentDayOfMonth,
+          insuranceCents: insuranceCents,
         );
       }
       if (mounted) Navigator.of(context).pop();
@@ -206,6 +221,18 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
                 },
               ),
               const SizedBox(height: AppSpacing.lg),
+              TextFormField(
+                controller: _paymentDayController,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(labelText: 'Jour de prélèvement (facultatif)'),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final day = int.tryParse(v.trim());
+                  return (day == null || day < 1 || day > 31) ? 'Jour invalide (1-31)' : null;
+                },
+              ),
+              const SizedBox(height: AppSpacing.lg),
               DatePickerField(
                 label: 'Date de début',
                 value: _startDate,
@@ -238,6 +265,12 @@ class _CreditFormPageState extends ConsumerState<CreditFormPage> {
                   required: false,
                 ),
               ],
+              const SizedBox(height: AppSpacing.lg),
+              EuroAmountField(
+                controller: _insuranceController,
+                label: 'Assurance mensuelle',
+                required: false,
+              ),
               const SizedBox(height: AppSpacing.lg),
               Text('Couleur (facultatif)', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: AppSpacing.sm),

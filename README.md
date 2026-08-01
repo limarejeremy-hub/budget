@@ -63,5 +63,16 @@ depuis Paramètres).
   automatique par mensualités restantes (🟢🟡🟠🔴), cartes crédit enrichies — banque, badge de
   priorité, espacements et typographie premium —, architecture préparée pour la V0.9
   [décrémentation automatique des crédits] sans l'activer)
-- Statistiques avancées, synchronisation bancaire, automatisation des remboursements (V0.9) :
-  à venir
+- Phase 9 (V0.9) — Smart Automation : ✅ (un crédit ne se crée qu'une fois — sa charge fixe
+  mensuelle, ses notifications et ses projections sont générées automatiquement ; fusion
+  Charges ⇄ Crédits par lien direct, plus aucun doublon possible, même après import d'une
+  sauvegarde ou migration depuis une version antérieure ; carte "Aujourd'hui" cliquable ouvrant
+  un centre de confirmations — ✅ confirmer, ✏️ modifier le montant réel, ⏰ reporter,
+  ❌ ignorer — qui décrémente automatiquement le capital, les mensualités restantes et la date
+  de fin d'un crédit dès qu'une mensualité est confirmée ; notifications locales Android
+  (`flutter_local_notifications`, 100 % hors-ligne) avec actions directes depuis la
+  notification (confirmer / rappeler dans 2 h / ignorer aujourd'hui) ; badge du nombre
+  d'opérations en attente sur la carte "Aujourd'hui" et centre de notifications dédié avec
+  historique persistant ; chaque nouveau cycle régénère automatiquement les charges de tous
+  les crédits actifs, sans aucune ressaisie)
+- Statistiques avancées, synchronisation bancaire : à venir

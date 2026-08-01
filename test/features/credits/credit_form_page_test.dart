@@ -37,7 +37,7 @@ void main() {
   // soit effectivement construit (ListView reste "lazy" même à contenu
   // statique) et atteignable par tap() sans avoir à défiler.
   void useTallViewport(WidgetTester tester) {
-    tester.view.physicalSize = const Size(1080, 3200);
+    tester.view.physicalSize = const Size(1080, 4800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -123,5 +123,40 @@ void main() {
     expect(credit.organisme, 'Boursorama');
     expect(credit.colorValue, secondColor.toARGB32());
     expect(credit.iconCodePoint, secondIcon.codePoint);
+  });
+
+  testWidgets('le jour de prélèvement et l\'assurance choisis sont bien enregistrés', (tester) async {
+    useTallViewport(tester);
+    await tester.pumpWidget(wrap(const CreditFormPage()));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Nom (ex : Voiture, Prêt immobilier)'), 'Voiture');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Montant initial emprunté'), '15000');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Capital restant dû'), '9000');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Mensualité'), '250');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Mensualités restantes'), '36');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Jour de prélèvement (facultatif)'), '5');
+    await tester.enterText(find.widgetWithText(TextFormField, 'Assurance mensuelle (facultatif)'), '12');
+
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pumpAndSettle();
+
+    final credit = (await repository.loadCredits()).single;
+    expect(credit.paymentDayOfMonth, 5);
+    expect(credit.insuranceCents, 1200);
+  });
+
+  testWidgets('un jour de prélèvement hors 1-31 affiche une erreur', (tester) async {
+    useTallViewport(tester);
+    await tester.pumpWidget(wrap(const CreditFormPage()));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Jour de prélèvement (facultatif)'), '35');
+    await tester.tap(find.text('Enregistrer'));
+    await tester.pump();
+
+    expect(find.text('Jour invalide (1-31)'), findsOneWidget);
   });
 }

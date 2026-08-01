@@ -1,20 +1,48 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/calculations/pending_confirmations.dart';
+import '../../domain/models/dashboard_view_data.dart';
 import '../../features/charges/charges_page.dart';
 import '../../features/dashboard/dashboard_page.dart';
 import '../../features/expenses/variable_expenses_page.dart';
 import '../../features/history/history_page.dart';
 import '../../features/settings/settings_page.dart';
+import '../providers/dashboard_providers.dart';
 
-class AppShell extends StatefulWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
 
   @override
-  State<AppShell> createState() => _AppShellState();
+  ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends ConsumerState<AppShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Notifications locales (V0.9) : initialisation + permission + rappels
+    // du jour. Ne bloque jamais l'affichage de l'app (voir NotificationService
+    // — chaque étape échoue silencieusement si le plugin ou la permission
+    // n'est pas disponible, ex. web ou tests).
+    Future.microtask(_initNotifications);
+  }
+
+  Future<void> _initNotifications() async {
+    final service = ref.read(notificationServiceProvider);
+    await service.initialize();
+    await service.requestPermission();
+
+    ref.listenManual<AsyncValue<DashboardViewData?>>(dashboardProvider, (previous, next) {
+      final data = next.valueOrNull;
+      if (data == null) return;
+      final pendingCount = pendingConfirmations(data).length;
+      // ignore: discarded_futures
+      service.scheduleDailyReminders(todayCharges: data.todayFixedExpenses, pendingCountToday: pendingCount);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -50,6 +50,7 @@ FixedExpenseEntity fixedExpenseFromRow(FixedExpense row, {DateTime? now}) {
     categoryId: row.categoryId,
     isRecurring: row.isRecurring,
     isActive: row.isActive,
+    linkedCreditId: row.linkedCreditId,
   );
 }
 
@@ -94,4 +95,6 @@ CreditEntity creditFromRow(Credit row) => CreditEntity(
       organisme: row.organisme,
       colorValue: row.colorValue,
       iconCodePoint: row.iconCodePoint,
+      paymentDayOfMonth: row.paymentDayOfMonth,
+      insuranceCents: row.insuranceCents,
     );

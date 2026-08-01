@@ -22,6 +22,13 @@ class CreditEntity {
   final int? colorValue;
   final int? iconCodePoint;
 
+  /// Jour du mois du prélèvement (1-31, facultatif) — date la charge fixe
+  /// générée automatiquement chaque cycle.
+  final int? paymentDayOfMonth;
+
+  /// Assurance mensuelle éventuelle, en centimes — purement informatif.
+  final int? insuranceCents;
+
   const CreditEntity({
     required this.id,
     required this.name,
@@ -42,6 +49,8 @@ class CreditEntity {
     this.organisme,
     this.colorValue,
     this.iconCodePoint,
+    this.paymentDayOfMonth,
+    this.insuranceCents,
   });
 
   /// Progression intelligente du remboursement, entre 0.0 et 1.0 :

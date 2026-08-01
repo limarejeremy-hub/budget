@@ -63,9 +63,54 @@ fichier, sur l'appareil. C'est pourquoi la fonction de sauvegarde manuelle
   actuel sans perdre aucune donnée existante.
 - `test/data/credit_migration_test.dart` vérifie qu'une base simulant le
   schéma v2 (avant l'ajout de la table `Credits`) migre vers le schéma
-  courant sans perdre aucune donnée existante, et qu'une base simulant le
+  courant sans perdre aucune donnée existante, qu'une base simulant le
   schéma v3 (avant l'ajout des colonnes organisme/couleur/icône) migre vers
-  v4 sans perdre les crédits déjà enregistrés.
+  v4 sans perdre les crédits déjà enregistrés, et qu'une base simulant le
+  schéma v4 (avant le jour de prélèvement, l'assurance, le lien
+  charge ↔ crédit et l'historique de notifications) migre vers v5 en
+  **reliant automatiquement** les charges "Crédit" existantes au crédit
+  correspondant (voir « Fusion Charges/Crédits (V0.9) » ci-dessous).
+
+### Fusion Charges/Crédits (V0.9)
+
+Depuis la V0.9, un crédit est la **source de vérité unique** de sa
+mensualité : créer un crédit génère automatiquement sa charge fixe dans le
+cycle en cours (catégorie « Crédit »), la modifier met à jour la charge non
+encore confirmée, et le supprimer supprime toutes ses charges liées — sans
+jamais dupliquer ni exiger de double saisie.
+
+- **Schéma v4 → v5** (`AppDatabase.schemaVersion = 5`) ajoute, de façon
+  strictement additive :
+  - `Credits.paymentDayOfMonth` et `Credits.insuranceCents` (nullable) ;
+  - `FixedExpenses.linkedCreditId` (nullable, référence `Credits.id`) — le
+    lien charge ↔ crédit ;
+  - la table `NotificationLogs` (historique persistant des notifications,
+    voir plus bas).
+- **Comptes existants (compatibilité ascendante)** : au moment de la
+  migration, une fonction de réconciliation (`reconcileCreditLinkedCharges`)
+  relie automatiquement chaque charge fixe de catégorie « Crédit » sans
+  lien à un crédit existant du même nom (comparaison insensible à la casse
+  et aux espaces). Aucun crédit ni aucune charge n'a besoin d'être ressaisi.
+  La même fonction est réutilisée à la fin de **l'import de sauvegarde**
+  (les identifiants de crédit ne sont pas stables d'un appareil à l'autre,
+  donc `linkedCreditId` n'est jamais exporté tel quel — la réconciliation
+  par nom reconstruit le lien après import).
+- Une charge déjà **confirmée** (prélevée) n'est plus jamais réécrite par la
+  synchronisation automatique — seul l'historique futur (charges à venir ou
+  à confirmer) suit les modifications du crédit.
+
+## Historique des notifications (V0.9)
+
+BudgetPilot fonctionne à 100 % hors-ligne : les rappels (résumé du matin,
+prélèvement important, bilan du soir, crédit terminé, mensualité mise à
+jour) sont des notifications **locales** (`flutter_local_notifications`),
+sans aucun serveur ni compte. Chaque notification affichée est aussi
+journalisée dans la table `NotificationLogs`, qui reste la source de vérité
+du centre de notifications même si la permission système est refusée ou si
+le bandeau Android a déjà disparu. Cette table n'est **pas** incluse dans
+l'export/import de sauvegarde : c'est un historique local, régénéré au fil
+de l'usage de l'app, pas une donnée financière à transférer d'un appareil à
+l'autre.
 
 ## ❌ Les données PEUVENT être perdues quand…
 

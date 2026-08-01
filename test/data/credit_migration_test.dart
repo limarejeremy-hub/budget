@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -34,15 +35,17 @@ void main() {
       expectedDate: DateTime(2026, 1, 1),
     );
 
+    await db.customStatement('ALTER TABLE fixed_expenses DROP COLUMN linked_credit_id');
+    await db.customStatement('DROP TABLE notification_logs');
     await db.customStatement('DROP TABLE credits');
     await db.customStatement('PRAGMA user_version = 2');
     await db.close();
 
-    // 2. Rouvrir avec AppDatabase (schemaVersion 4) : Drift doit exécuter
-    // automatiquement migration.onUpgrade(m, 2, 4), qui recrée la table
-    // credits — déjà avec les colonnes organisme/colorValue/iconCodePoint
-    // puisque `createTable` matérialise la définition Dart actuelle — sans
-    // jamais toucher aux autres tables.
+    // 2. Rouvrir avec AppDatabase (schemaVersion 5) : Drift doit exécuter
+    // automatiquement migration.onUpgrade(m, 2, 5), qui recrée la table
+    // credits — déjà avec toutes les colonnes actuelles puisque
+    // `createTable` matérialise la définition Dart actuelle — sans jamais
+    // toucher aux autres tables.
     db = AppDatabase.forTesting(NativeDatabase(dbFile));
     repository = CycleRepository(db);
 
@@ -67,7 +70,7 @@ void main() {
     expect(creditId, greaterThan(0));
 
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 4, reason: 'le marqueur de version doit être mis à jour');
+    expect(versionRow.data['user_version'], 5, reason: 'le marqueur de version doit être mis à jour');
 
     await db.close();
   });
@@ -95,12 +98,16 @@ void main() {
     await db.customStatement('ALTER TABLE credits DROP COLUMN organisme');
     await db.customStatement('ALTER TABLE credits DROP COLUMN color_value');
     await db.customStatement('ALTER TABLE credits DROP COLUMN icon_code_point');
+    await db.customStatement('ALTER TABLE credits DROP COLUMN payment_day_of_month');
+    await db.customStatement('ALTER TABLE credits DROP COLUMN insurance_cents');
+    await db.customStatement('ALTER TABLE fixed_expenses DROP COLUMN linked_credit_id');
+    await db.customStatement('DROP TABLE notification_logs');
     await db.customStatement('PRAGMA user_version = 3');
     await db.close();
 
-    // 2. Rouvrir avec AppDatabase (schemaVersion 4) : Drift doit exécuter
-    // onUpgrade(m, 3, 4), qui ajoute les 3 colonnes via addColumn (le crédit
-    // existant n'est jamais supprimé).
+    // 2. Rouvrir avec AppDatabase (schemaVersion 5) : Drift doit exécuter
+    // onUpgrade(m, 3, 5), qui ajoute les 3 colonnes de la v4 via addColumn
+    // (le crédit existant n'est jamais supprimé), puis enchaîne vers v5.
     db = AppDatabase.forTesting(NativeDatabase(dbFile));
     repository = CycleRepository(db);
 
@@ -113,7 +120,83 @@ void main() {
     expect(credits.single.iconCodePoint, isNull);
 
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 4);
+    expect(versionRow.data['user_version'], 5);
+
+    await db.close();
+  });
+
+  test(
+      'migration v4 -> v5 ajoute jour de prélèvement/assurance/lien de charge '
+      'et relie automatiquement les charges "Crédit" existantes', () async {
+    final tempDir = await Directory.systemTemp.createTemp('budgetpilot_credit_migration_v5_test');
+    final dbFile = File('${tempDir.path}/budgetpilot.sqlite');
+    addTearDown(() => tempDir.delete(recursive: true));
+
+    // 1. Simuler une base existante en schéma v4 (V0.8) : un crédit "Voiture"
+    // et, comme avant la V0.9, une charge fixe manuelle de catégorie
+    // "Crédit" et de même nom — c'est exactement le doublon que la V0.9
+    // doit réconcilier automatiquement, sans perte de données.
+    var db = AppDatabase.forTesting(NativeDatabase(dbFile));
+    var repository = CycleRepository(db);
+
+    final cycleId = await repository.createCycle(
+      startDate: DateTime(2026, 1, 1),
+      endDate: DateTime(2026, 1, 31),
+    );
+    final categories = await (db.select(db.categories)
+          ..where((c) => c.name.equals('Crédit') & c.type.equals('fixed_expense')))
+        .getSingle();
+    final chargeId = await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Voiture',
+      expectedAmountCents: 25000,
+      expectedDate: DateTime(2026, 1, 5),
+      categoryId: categories.id,
+    );
+    // Insertion directe (pas via repository.createCredit) : on simule ici
+    // une base V0.8, avant que la création d'un crédit ne génère
+    // automatiquement sa charge liée — la charge et le crédit ci-dessus
+    // existent bien indépendamment, exactement le doublon historique que
+    // la réconciliation V0.9 doit résoudre.
+    final creditId = await db.into(db.credits).insert(CreditsCompanion.insert(
+          name: 'Voiture',
+          initialAmountCents: 1500000,
+          remainingCapitalCents: 900000,
+          monthlyPaymentCents: 25000,
+          expectedEndDate: DateTime(2029, 1, 1),
+          remainingInstallments: 36,
+        ));
+
+    await db.customStatement('ALTER TABLE credits DROP COLUMN payment_day_of_month');
+    await db.customStatement('ALTER TABLE credits DROP COLUMN insurance_cents');
+    await db.customStatement('ALTER TABLE fixed_expenses DROP COLUMN linked_credit_id');
+    await db.customStatement('DROP TABLE notification_logs');
+    await db.customStatement('PRAGMA user_version = 4');
+    await db.close();
+
+    // 2. Rouvrir avec AppDatabase (schemaVersion 5) : Drift doit exécuter
+    // onUpgrade(m, 4, 5), qui ajoute les colonnes manquantes, recrée
+    // notification_logs, et relie automatiquement la charge "Voiture"
+    // (catégorie Crédit) au crédit "Voiture" par correspondance de nom.
+    db = AppDatabase.forTesting(NativeDatabase(dbFile));
+    repository = CycleRepository(db);
+
+    final credits = await repository.loadCredits();
+    expect(credits, hasLength(1), reason: 'le crédit existant doit survivre à la migration');
+    expect(credits.single.id, creditId);
+    expect(credits.single.paymentDayOfMonth, isNull);
+    expect(credits.single.insuranceCents, isNull);
+
+    final data = await repository.loadCurrentCycleData();
+    final charge = data!.fixedExpenses.singleWhere((e) => e.id == chargeId);
+    expect(charge.linkedCreditId, creditId,
+        reason: 'la charge "Crédit" existante doit être reliée au crédit correspondant par son nom');
+
+    final notificationLogs = await repository.loadNotificationLogs();
+    expect(notificationLogs, isEmpty, reason: 'la table notification_logs doit être utilisable, vide');
+
+    final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
+    expect(versionRow.data['user_version'], 5);
 
     await db.close();
   });

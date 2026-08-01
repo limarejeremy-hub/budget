@@ -306,6 +306,59 @@ void main() {
       expect(find.text('Salaire'), findsOneWidget);
       expect(find.textContaining('Assurance'), findsOneWidget);
     });
+
+    testWidgets('affiche un badge avec le nombre d\'opérations en attente de confirmation (V0.9)',
+        (tester) async {
+      final data = DashboardViewData(
+        cycleId: 1,
+        cycleStart: DateTime(2026, 7, 27),
+        cycleEnd: DateTime(2026, 8, 26),
+        totalIncomeCents: 515000,
+        totalFixedExpensesCents: 245000,
+        totalVariableExpensesCents: 67700,
+        totalSavingsCents: 80000,
+        realRemainingCents: 122300,
+        remainingRatio: 0.24,
+        unconfirmedChargesCount: 0,
+        unconfirmedChargesTotalCents: 0,
+        todayFixedExpenses: [
+          FixedExpenseEntity(
+            id: 1,
+            cycleId: 1,
+            name: 'Internet',
+            expectedAmountCents: 12000,
+            expectedDate: DateTime(2026, 8, 5),
+          ),
+        ],
+        alerts: [
+          FixedExpenseEntity(
+            id: 2,
+            cycleId: 1,
+            name: 'Assurance',
+            expectedAmountCents: 8000,
+            expectedDate: DateTime(2026, 7, 20),
+            status: ChargeStatus.aConfirmer,
+          ),
+        ],
+      );
+      await _pumpDashboard(tester, data);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      expect(find.text('2'), findsOneWidget);
+    });
+
+    testWidgets('un tap sur la carte "Aujourd\'hui" ouvre le centre de confirmations (V0.9)',
+        (tester) async {
+      await _pumpDashboard(tester, _sampleData());
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.tap(find.text("Aujourd'hui"));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AppBar, 'Confirmations'), findsOneWidget);
+    });
   });
 
   group('Progression du cycle', () {

@@ -2,6 +2,8 @@ import 'package:drift/drift.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/default_categories.dart';
+import '../../domain/calculations/credit_auto_update_service.dart';
+import 'converters/entity_mappers.dart';
 import 'database.dart';
 
 /// Version du format de sauvegarde JSON (export/import). À incrémenter si
@@ -132,12 +134,29 @@ class CycleRepository {
     int? declaredBankBalanceCents,
   }) async {
     await ensureDefaultCategories();
-    return db.into(db.budgetCycles).insert(BudgetCyclesCompanion.insert(
+    final cycleId = await db.into(db.budgetCycles).insert(BudgetCyclesCompanion.insert(
           startDate: startDate,
           endDate: endDate,
           name: Value(name),
           declaredBankBalanceCents: Value(declaredBankBalanceCents),
         ));
+
+    // Automatisation mensuelle (V0.9) : chaque nouveau cycle génère
+    // automatiquement la charge mensuelle de tous les crédits actifs —
+    // l'utilisateur ne recrée jamais une charge de crédit à la main.
+    final activeCredits = await (db.select(db.credits)..where((c) => c.isActive.equals(true))).get();
+    for (final credit in activeCredits) {
+      await _syncLinkedChargeForCycle(
+        cycleId: cycleId,
+        cycleStart: startDate,
+        creditId: credit.id,
+        name: credit.name,
+        monthlyPaymentCents: credit.monthlyPaymentCents,
+        paymentDayOfMonth: credit.paymentDayOfMonth,
+      );
+    }
+
+    return cycleId;
   }
 
   // ---------------------------------------------------------------------
@@ -393,8 +412,10 @@ class CycleRepository {
     String? organisme,
     int? colorValue,
     int? iconCodePoint,
-  }) {
-    return db.into(db.credits).insert(CreditsCompanion.insert(
+    int? paymentDayOfMonth,
+    int? insuranceCents,
+  }) async {
+    final id = await db.into(db.credits).insert(CreditsCompanion.insert(
           name: name,
           initialAmountCents: initialAmountCents,
           remainingCapitalCents: remainingCapitalCents,
@@ -410,7 +431,20 @@ class CycleRepository {
           organisme: Value(organisme),
           colorValue: Value(colorValue),
           iconCodePoint: Value(iconCodePoint),
+          paymentDayOfMonth: Value(paymentDayOfMonth),
+          insuranceCents: Value(insuranceCents),
         ));
+
+    // V0.9 : le crédit est la source de vérité — sa charge fixe mensuelle
+    // est générée automatiquement, l'utilisateur ne la crée jamais.
+    await _syncLinkedChargeForCurrentCycle(
+      creditId: id,
+      name: name,
+      monthlyPaymentCents: monthlyPaymentCents,
+      paymentDayOfMonth: paymentDayOfMonth,
+    );
+
+    return id;
   }
 
   Future<void> updateCredit({
@@ -430,8 +464,10 @@ class CycleRepository {
     String? organisme,
     int? colorValue,
     int? iconCodePoint,
-  }) {
-    return (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
+    int? paymentDayOfMonth,
+    int? insuranceCents,
+  }) async {
+    await (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
       name: Value(name),
       initialAmountCents: Value(initialAmountCents),
       remainingCapitalCents: Value(remainingCapitalCents),
@@ -447,17 +483,246 @@ class CycleRepository {
       organisme: Value(organisme),
       colorValue: Value(colorValue),
       iconCodePoint: Value(iconCodePoint),
+      paymentDayOfMonth: Value(paymentDayOfMonth),
+      insuranceCents: Value(insuranceCents),
       updatedAt: Value(DateTime.now()),
     ));
+
+    // Si la mensualité (ou le jour de prélèvement) change, la charge liée
+    // encore non confirmée se met à jour automatiquement — jamais celles
+    // déjà prélevées (historique intact). Un crédit terminé n'a plus de
+    // charge à générer.
+    final updated = await (db.select(db.credits)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (updated != null && updated.isActive) {
+      await _syncLinkedChargeForCurrentCycle(
+        creditId: id,
+        name: name,
+        monthlyPaymentCents: monthlyPaymentCents,
+        paymentDayOfMonth: paymentDayOfMonth,
+      );
+    }
   }
 
-  Future<void> deleteCredit(int id) => (db.delete(db.credits)..where((t) => t.id.equals(id))).go();
+  /// Supprime le crédit et toutes ses charges liées (tous cycles confondus,
+  /// y compris déjà confirmées) — "si un crédit est supprimé, sa charge
+  /// disparaît automatiquement".
+  Future<void> deleteCredit(int id) async {
+    await (db.delete(db.fixedExpenses)..where((e) => e.linkedCreditId.equals(id))).go();
+    await (db.delete(db.credits)..where((t) => t.id.equals(id))).go();
+  }
 
-  Future<void> setCreditActive(int id, bool isActive) {
-    return (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
+  Future<void> setCreditActive(int id, bool isActive) async {
+    await (db.update(db.credits)..where((t) => t.id.equals(id))).write(CreditsCompanion(
       isActive: Value(isActive),
       updatedAt: Value(DateTime.now()),
     ));
+
+    if (!isActive) {
+      // Crédit marqué terminé : ses charges pas encore confirmées n'ont
+      // plus lieu d'être — jamais l'historique déjà prélevé/ignoré.
+      await (db.delete(db.fixedExpenses)
+            ..where((e) =>
+                e.linkedCreditId.equals(id) &
+                e.status.isIn([ChargeStatus.aVenir, ChargeStatus.aVerifierAujourdhui, ChargeStatus.aConfirmer])))
+          .go();
+    } else {
+      final credit = await (db.select(db.credits)..where((t) => t.id.equals(id))).getSingleOrNull();
+      if (credit != null) {
+        await _syncLinkedChargeForCurrentCycle(
+          creditId: id,
+          name: credit.name,
+          monthlyPaymentCents: credit.monthlyPaymentCents,
+          paymentDayOfMonth: credit.paymentDayOfMonth,
+        );
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Liaison automatique Charges ⇄ Crédits (V0.9)
+  // ---------------------------------------------------------------------
+
+  /// Crée ou met à jour, dans le cycle actuellement ouvert (s'il y en a
+  /// un), la charge fixe générée automatiquement pour [creditId]. Ne crée
+  /// jamais de doublon : une charge déjà liée à ce crédit dans ce cycle est
+  /// mise à jour plutôt que dupliquée, et une charge déjà confirmée n'est
+  /// jamais réécrite.
+  Future<void> _syncLinkedChargeForCurrentCycle({
+    required int creditId,
+    required String name,
+    required int monthlyPaymentCents,
+    int? paymentDayOfMonth,
+  }) async {
+    final cycle = await _fetchCurrentCycle();
+    if (cycle == null) return;
+    await _syncLinkedChargeForCycle(
+      cycleId: cycle.id,
+      cycleStart: cycle.startDate,
+      creditId: creditId,
+      name: name,
+      monthlyPaymentCents: monthlyPaymentCents,
+      paymentDayOfMonth: paymentDayOfMonth,
+    );
+  }
+
+  Future<void> _syncLinkedChargeForCycle({
+    required int cycleId,
+    required DateTime cycleStart,
+    required int creditId,
+    required String name,
+    required int monthlyPaymentCents,
+    int? paymentDayOfMonth,
+  }) async {
+    final existing = await (db.select(db.fixedExpenses)
+          ..where((e) => e.cycleId.equals(cycleId) & e.linkedCreditId.equals(creditId)))
+        .getSingleOrNull();
+
+    final expectedDate = _paymentDateForCycle(cycleStart, paymentDayOfMonth);
+
+    if (existing == null) {
+      await ensureDefaultCategories();
+      final creditCategoryId = await _creditCategoryId();
+      await db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
+            cycleId: cycleId,
+            name: name,
+            expectedAmountCents: monthlyPaymentCents,
+            expectedDate: expectedDate,
+            categoryId: Value(creditCategoryId),
+            linkedCreditId: Value(creditId),
+          ));
+    } else if (existing.status != ChargeStatus.prelevee) {
+      await (db.update(db.fixedExpenses)..where((e) => e.id.equals(existing.id))).write(
+        FixedExpensesCompanion(
+          name: Value(name),
+          expectedAmountCents: Value(monthlyPaymentCents),
+          expectedDate: Value(expectedDate),
+        ),
+      );
+    }
+  }
+
+  Future<int?> _creditCategoryId() async {
+    final category = await (db.select(db.categories)
+          ..where((c) => c.name.equals('Crédit') & c.type.equals(EntityType.fixedExpense)))
+        .getSingleOrNull();
+    return category?.id;
+  }
+
+  DateTime _paymentDateForCycle(DateTime cycleStart, int? paymentDayOfMonth) {
+    if (paymentDayOfMonth == null) return cycleStart;
+    final year = cycleStart.year;
+    final month = cycleStart.month;
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final day = paymentDayOfMonth.clamp(1, daysInMonth);
+    return DateTime(year, month, day);
+  }
+
+  // ---------------------------------------------------------------------
+  // Confirmations du jour (V0.9) — Confirmer / Modifier / Reporter / Ignorer
+  // ---------------------------------------------------------------------
+
+  /// Confirme une charge fixe (statut "prelevee"), avec un montant réel
+  /// facultatif. Si la charge est liée à un crédit, décrémente
+  /// automatiquement son capital et ses mensualités restantes avec le
+  /// montant réellement confirmé — sans aucune intervention utilisateur
+  /// supplémentaire. Renvoie le résultat de la mise à jour du crédit
+  /// lorsqu'il y en a une (`null` sinon), pour permettre à l'appelant de
+  /// déclencher la notification appropriée.
+  Future<CreditAutoUpdateResult?> confirmFixedExpense(int chargeId, {int? actualAmountCents}) async {
+    final charge = await (db.select(db.fixedExpenses)..where((e) => e.id.equals(chargeId))).getSingleOrNull();
+    if (charge == null) return null;
+
+    await (db.update(db.fixedExpenses)..where((e) => e.id.equals(chargeId))).write(
+      FixedExpensesCompanion(
+        status: const Value(ChargeStatus.prelevee),
+        actualAmountCents: actualAmountCents == null ? const Value.absent() : Value(actualAmountCents),
+      ),
+    );
+
+    final linkedCreditId = charge.linkedCreditId;
+    if (linkedCreditId == null) return null;
+
+    final creditRow = await (db.select(db.credits)..where((c) => c.id.equals(linkedCreditId))).getSingleOrNull();
+    if (creditRow == null) return null;
+
+    final paidCents = actualAmountCents ?? charge.actualAmountCents ?? charge.expectedAmountCents;
+    final credit = creditFromRow(creditRow);
+    final updated = const CreditAutoUpdateService().applyPayment(credit, paidCents);
+    final finished = updated.remainingCapitalCents <= 0 || updated.remainingInstallments <= 0;
+
+    await updateCredit(
+      id: updated.id,
+      name: updated.name,
+      initialAmountCents: updated.initialAmountCents,
+      remainingCapitalCents: updated.remainingCapitalCents,
+      monthlyPaymentCents: updated.monthlyPaymentCents,
+      annualRatePercent: updated.annualRatePercent,
+      startDate: updated.startDate,
+      expectedEndDate: updated.expectedEndDate,
+      remainingInstallments: updated.remainingInstallments,
+      creditType: updated.creditType,
+      earlyRepaymentAllowed: updated.earlyRepaymentAllowed,
+      earlyRepaymentPenaltyCents: updated.earlyRepaymentPenaltyCents,
+      notes: updated.notes,
+      organisme: updated.organisme,
+      colorValue: updated.colorValue,
+      iconCodePoint: updated.iconCodePoint,
+      paymentDayOfMonth: updated.paymentDayOfMonth,
+      insuranceCents: updated.insuranceCents,
+    );
+
+    if (finished) {
+      await setCreditActive(updated.id, false);
+    }
+
+    return CreditAutoUpdateResult(credit: updated, finished: finished);
+  }
+
+  /// Reporte une charge fixe de [by] (par défaut un jour) — action "⏰
+  /// Reporter" du centre de confirmations.
+  Future<void> postponeFixedExpense(int id, {Duration by = const Duration(days: 1)}) async {
+    final charge = await (db.select(db.fixedExpenses)..where((e) => e.id.equals(id))).getSingleOrNull();
+    if (charge == null) return;
+    await (db.update(db.fixedExpenses)..where((e) => e.id.equals(id)))
+        .write(FixedExpensesCompanion(expectedDate: Value(charge.expectedDate.add(by))));
+  }
+
+  // ---------------------------------------------------------------------
+  // Notifications locales (V0.9) — historique persistant, indépendant de la
+  // permission système et du bandeau Android (non relisible par l'app).
+  // ---------------------------------------------------------------------
+
+  Future<int> logNotification({
+    required String type,
+    required String title,
+    required String body,
+    int? relatedFixedExpenseId,
+    int? relatedCreditId,
+  }) {
+    return db.into(db.notificationLogs).insert(NotificationLogsCompanion.insert(
+          type: type,
+          title: title,
+          body: body,
+          relatedFixedExpenseId: Value(relatedFixedExpenseId),
+          relatedCreditId: Value(relatedCreditId),
+        ));
+  }
+
+  Future<List<NotificationLog>> loadNotificationLogs() =>
+      // Trié par id (et non par date) : plus fiable pour deux notifications
+      // journalisées dans le même intervalle de résolution de l'horloge.
+      (db.select(db.notificationLogs)..orderBy([(n) => OrderingTerm.desc(n.id)])).get();
+
+  Stream<List<NotificationLog>> watchNotificationLogs() async* {
+    yield await loadNotificationLogs();
+    yield* db
+        .tableUpdates(TableUpdateQuery.onAllTables([db.notificationLogs]))
+        .asyncMap((_) => loadNotificationLogs());
+  }
+
+  Future<void> markNotificationRead(int id) {
+    return (db.update(db.notificationLogs)..where((n) => n.id.equals(id)))
+        .write(const NotificationLogsCompanion(read: Value(true)));
   }
 
   // ---------------------------------------------------------------------
@@ -564,6 +829,8 @@ class CycleRepository {
             'organisme': c.organisme,
             'colorValue': c.colorValue,
             'iconCodePoint': c.iconCodePoint,
+            'paymentDayOfMonth': c.paymentDayOfMonth,
+            'insuranceCents': c.insuranceCents,
           },
       ],
     };
@@ -706,8 +973,16 @@ class CycleRepository {
               organisme: Value(c['organisme'] as String?),
               colorValue: Value(c['colorValue'] as int?),
               iconCodePoint: Value(c['iconCodePoint'] as int?),
+              paymentDayOfMonth: Value(c['paymentDayOfMonth'] as int?),
+              insuranceCents: Value(c['insuranceCents'] as int?),
             ));
       }
+
+      // Relie les charges "Crédit" importées aux crédits importés par nom
+      // — les identifiants internes changent à l'import, donc jamais
+      // exportés/réimportés tels quels ; cette réconciliation est la même
+      // que celle exécutée lors de la migration V0.9 (voir database.dart).
+      await reconcileCreditLinkedCharges(db);
 
       return importedCycles;
     });
