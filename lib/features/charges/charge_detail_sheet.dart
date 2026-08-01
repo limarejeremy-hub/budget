@@ -11,6 +11,7 @@ import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
+import 'widgets/delete_linked_charge_dialog.dart';
 
 /// Ouvre la fiche détaillée d'une charge fixe : détail complet + actions
 /// (Modifier, Marquer comme prélevée, Dupliquer, Supprimer).
@@ -120,29 +121,44 @@ class ChargeDetailSheet extends ConsumerWidget {
                   messenger.showSnackBar(const SnackBar(content: Text('Charge marquée comme prélevée')));
                 },
               ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.copy_outlined),
-              title: const Text('Dupliquer'),
-              onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                await ref.read(cycleRepositoryProvider).createFixedExpense(
-                      cycleId: cycleId,
-                      name: charge.name,
-                      expectedAmountCents: charge.expectedAmountCents,
-                      expectedDate: charge.expectedDate,
-                      categoryId: charge.categoryId,
-                      isRecurring: charge.isRecurring,
-                    );
-                if (context.mounted) Navigator.of(context).pop();
-                messenger.showSnackBar(const SnackBar(content: Text('Charge dupliquée')));
-              },
-            ),
+            // Une mensualité de crédit est unique par cycle (générée
+            // automatiquement) — la dupliquer n'a pas de sens.
+            if (!charge.isLinkedToCredit)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.copy_outlined),
+                title: const Text('Dupliquer'),
+                onTap: () async {
+                  final messenger = ScaffoldMessenger.of(context);
+                  await ref.read(cycleRepositoryProvider).createFixedExpense(
+                        cycleId: cycleId,
+                        name: charge.name,
+                        expectedAmountCents: charge.expectedAmountCents,
+                        expectedDate: charge.expectedDate,
+                        categoryId: charge.categoryId,
+                        isRecurring: charge.isRecurring,
+                      );
+                  if (context.mounted) Navigator.of(context).pop();
+                  messenger.showSnackBar(const SnackBar(content: Text('Charge dupliquée')));
+                },
+              ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.delete_outline, color: colorScheme.error),
               title: Text('Supprimer', style: TextStyle(color: colorScheme.error)),
               onTap: () async {
+                if (charge.isLinkedToCredit) {
+                  final choice = await showDeleteLinkedChargeDialog(context, chargeName: charge.name);
+                  if (choice == null || !context.mounted) return;
+                  final repository = ref.read(cycleRepositoryProvider);
+                  if (choice == DeleteLinkedChargeChoice.chargeOnly) {
+                    await repository.deleteFixedExpense(charge.id);
+                  } else {
+                    await repository.deleteCredit(charge.linkedCreditId!);
+                  }
+                  if (context.mounted) Navigator.of(context).pop();
+                  return;
+                }
                 final confirmed = await confirmDelete(context, title: 'Supprimer "${charge.name}" ?');
                 if (confirmed && context.mounted) {
                   await ref.read(cycleRepositoryProvider).deleteFixedExpense(charge.id);

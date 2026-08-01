@@ -6,8 +6,10 @@ import '../../core/providers/credits_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/staggered_fade_in.dart';
+import '../../data/local/converters/entity_mappers.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/entities/credit_entity.dart';
+import '../entries/fixed_expense_form_page.dart';
 import 'credit_detail_page.dart';
 import 'credit_form_page.dart';
 import 'credit_visuals.dart';
@@ -36,51 +38,107 @@ class _CreditsPageState extends ConsumerState<CreditsPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Crédits')),
       body: SafeArea(
-        child: creditsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, st) => const Center(child: Text('Impossible de charger les crédits')),
-          data: (credits) {
-            if (credits.isEmpty) {
-              return const _EmptyCredits();
-            }
+        child: Column(
+          children: [
+            const _ChargesToCompleteSection(),
+            Expanded(
+              child: creditsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, st) => const Center(child: Text('Impossible de charger les crédits')),
+                data: (credits) {
+                  if (credits.isEmpty) {
+                    return const _EmptyCredits();
+                  }
 
-            final displayed = switch (_sortMode) {
-              _SortMode.none => credits,
-              _SortMode.lowestCapital => _creditCalculationService.sortByLowestCapital(credits),
-              _SortMode.highestRate => _creditCalculationService.sortByHighestRate(credits),
-              _SortMode.highestPayment => _creditCalculationService.sortByHighestPayment(credits),
-            };
+                  final displayed = switch (_sortMode) {
+                    _SortMode.none => credits,
+                    _SortMode.lowestCapital => _creditCalculationService.sortByLowestCapital(credits),
+                    _SortMode.highestRate => _creditCalculationService.sortByHighestRate(credits),
+                    _SortMode.highestPayment => _creditCalculationService.sortByHighestPayment(credits),
+                  };
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 88),
-              children: [
-                _CreditsSummaryHeader(credits: credits),
-                const SizedBox(height: AppSpacing.lg),
-                _IndicatorsSection(credits: credits),
-                const SizedBox(height: AppSpacing.xl),
-                OutlinedButton.icon(
-                  onPressed: () => showCreditRepaymentSimulatorSheet(context, credits: credits),
-                  icon: const Icon(Icons.calculate_outlined),
-                  label: const Text('Simuler un remboursement'),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                _SortSelector(
-                  selected: _sortMode,
-                  onChanged: (mode) => setState(() => _sortMode = mode),
-                ),
-                const SizedBox(height: AppSpacing.md),
-                for (final (index, credit) in displayed.indexed) ...[
-                  StaggeredFadeIn(index: index, child: _CreditCard(credit: credit)),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-              ],
-            );
-          },
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 88),
+                    children: [
+                      _CreditsSummaryHeader(credits: credits),
+                      const SizedBox(height: AppSpacing.lg),
+                      _IndicatorsSection(credits: credits),
+                      const SizedBox(height: AppSpacing.xl),
+                      OutlinedButton.icon(
+                        onPressed: () => showCreditRepaymentSimulatorSheet(context, credits: credits),
+                        icon: const Icon(Icons.calculate_outlined),
+                        label: const Text('Simuler un remboursement'),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      _SortSelector(
+                        selected: _sortMode,
+                        onChanged: (mode) => setState(() => _sortMode = mode),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      for (final (index, credit) in displayed.indexed) ...[
+                        StaggeredFadeIn(index: index, child: _CreditCard(credit: credit)),
+                        const SizedBox(height: AppSpacing.sm),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.of(context).push(AppPageRoute(builder: (_) => const CreditFormPage())),
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+/// Charges fixes de catégorie "Crédit" sans crédit lié (migration sans
+/// correspondance fiable, ou incohérence à corriger manuellement) — jamais
+/// masquées, jamais fusionnées silencieusement. Invisible (aucune hauteur)
+/// tant qu'il n'y en a aucune.
+class _ChargesToCompleteSection extends ConsumerWidget {
+  const _ChargesToCompleteSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chargesAsync = ref.watch(unlinkedCreditChargesProvider);
+    final charges = chargesAsync.valueOrNull ?? const [];
+    if (charges.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
+      child: Card(
+        color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Crédits à compléter', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Ces charges sont catégorisées "Crédit" mais ne sont reliées à aucun crédit — complète-les pour que BudgetPilot suive leur capital restant.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              for (final charge in charges)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.warning_amber_rounded),
+                  title: Text(charge.name),
+                  subtitle: Text(formatCentsAsEuro(charge.expectedAmountCents)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(AppPageRoute(
+                    builder: (_) =>
+                        FixedExpenseFormPage(cycleId: charge.cycleId, existing: fixedExpenseFromRow(charge)),
+                  )),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

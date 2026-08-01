@@ -187,4 +187,57 @@ void main() {
 
     expect(find.textContaining('2029'), findsWidgets);
   });
+
+  group('section "Crédits à compléter" (V0.9.1)', () {
+    testWidgets('invisible quand aucune charge Crédit orpheline n\'existe', (tester) async {
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Crédits à compléter'), findsNothing);
+    });
+
+    testWidgets('liste les charges catégorie Crédit sans crédit lié', (tester) async {
+      useTallViewport(tester);
+      final cycleId =
+          await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+      final categories = await repository.categoriesForType('fixed_expense');
+      final creditCategoryId = categories.firstWhere((c) => c.name == 'Crédit').id;
+      await repository.createFixedExpense(
+        cycleId: cycleId,
+        name: 'Ancien crédit non relié',
+        expectedAmountCents: 30000,
+        expectedDate: DateTime(2026, 8, 5),
+        categoryId: creditCategoryId,
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Crédits à compléter'), findsOneWidget);
+      expect(find.text('Ancien crédit non relié'), findsOneWidget);
+    });
+
+    testWidgets('un tap ouvre le formulaire de charge en édition', (tester) async {
+      useTallViewport(tester);
+      final cycleId =
+          await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+      final categories = await repository.categoriesForType('fixed_expense');
+      final creditCategoryId = categories.firstWhere((c) => c.name == 'Crédit').id;
+      await repository.createFixedExpense(
+        cycleId: cycleId,
+        name: 'Ancien crédit non relié',
+        expectedAmountCents: 30000,
+        expectedDate: DateTime(2026, 8, 5),
+        categoryId: creditCategoryId,
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Ancien crédit non relié'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AppBar, 'Modifier la charge fixe'), findsOneWidget);
+    });
+  });
 }

@@ -55,6 +55,7 @@ void main() {
                   status: charge.status,
                   categoryId: charge.categoryId,
                   isRecurring: charge.isRecurring,
+                  linkedCreditId: charge.linkedCreditId,
                 ),
                 cycleId: cycleId,
               );
@@ -106,5 +107,74 @@ void main() {
 
     final data = await repository.loadCurrentCycleData();
     expect(data!.fixedExpenses, isEmpty);
+  });
+
+  group('charge liée à un crédit (V0.9.1)', () {
+    Future<int> seedLinkedCharge() async {
+      final creditId = await repository.createCreditForExistingCharge(
+        name: 'Voiture',
+        initialAmountCents: 1500000,
+        remainingCapitalCents: 900000,
+        monthlyPaymentCents: 25000,
+        expectedEndDate: DateTime(2029, 1, 1),
+        remainingInstallments: 36,
+      );
+      await repository.createFixedExpense(
+        cycleId: cycleId,
+        name: 'Voiture',
+        expectedAmountCents: 25000,
+        expectedDate: DateTime(2026, 8, 5),
+        linkedCreditId: creditId,
+      );
+      return creditId;
+    }
+
+    testWidgets('"Dupliquer" est masqué pour une charge liée à un crédit', (tester) async {
+      await seedLinkedCharge();
+      await tester.pumpWidget(wrap(const SizedBox()));
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dupliquer'), findsNothing);
+    });
+
+    testWidgets('"Supprimer" propose un choix, "uniquement la charge" garde le crédit', (tester) async {
+      final creditId = await seedLinkedCharge();
+      await tester.pumpWidget(wrap(const SizedBox()));
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Supprimer'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Supprimer uniquement la charge mensuelle'), findsOneWidget);
+      expect(find.text('Supprimer aussi le crédit'), findsOneWidget);
+
+      await tester.tap(find.text('Supprimer uniquement la charge mensuelle'));
+      await tester.pumpAndSettle();
+
+      final data = await repository.loadCurrentCycleData();
+      expect(data!.fixedExpenses, isEmpty);
+      final credits = await repository.loadCredits();
+      expect(credits, hasLength(1));
+      expect(credits.single.id, creditId);
+    });
+
+    testWidgets('"Supprimer aussi le crédit" supprime le crédit et sa charge', (tester) async {
+      await seedLinkedCharge();
+      await tester.pumpWidget(wrap(const SizedBox()));
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Supprimer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Supprimer aussi le crédit'));
+      await tester.pumpAndSettle();
+
+      final data = await repository.loadCurrentCycleData();
+      expect(data!.fixedExpenses, isEmpty);
+      final credits = await repository.loadCredits();
+      expect(credits, isEmpty);
+    });
   });
 }

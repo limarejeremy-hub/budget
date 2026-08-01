@@ -217,6 +217,7 @@ class CycleRepository {
     int? categoryId,
     bool isRecurring = false,
     bool isActive = true,
+    int? linkedCreditId,
   }) {
     return db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
           cycleId: cycleId,
@@ -227,6 +228,7 @@ class CycleRepository {
           categoryId: Value(categoryId),
           isRecurring: Value(isRecurring),
           isActive: Value(isActive),
+          linkedCreditId: Value(linkedCreditId),
         ));
   }
 
@@ -239,6 +241,7 @@ class CycleRepository {
     int? categoryId,
     required bool isRecurring,
     required bool isActive,
+    int? linkedCreditId,
   }) {
     return (db.update(db.fixedExpenses)..where((t) => t.id.equals(id)))
         .write(FixedExpensesCompanion(
@@ -249,6 +252,7 @@ class CycleRepository {
       categoryId: Value(categoryId),
       isRecurring: Value(isRecurring),
       isActive: Value(isActive),
+      linkedCreditId: Value(linkedCreditId),
     ));
   }
 
@@ -618,6 +622,105 @@ class CycleRepository {
   }
 
   // ---------------------------------------------------------------------
+  // Liaison inverse Crédits ⇄ Charges (V0.9.1) — une charge fixe de
+  // catégorie "Crédit" ne doit jamais rester une charge isolée : elle doit
+  // toujours être reliée à un crédit existant ou en déclencher la création.
+  // ---------------------------------------------------------------------
+
+  /// Cherche un unique crédit actif dont le nom correspond exactement (une
+  /// fois normalisé) à [name] et qui n'a pas déjà de charge liée dans le
+  /// cycle [cycleId] (hors [excludeChargeId], la charge en cours
+  /// d'édition) — pour ne jamais créer une deuxième mensualité du même
+  /// crédit dans le même cycle. Renvoie `null` si aucune correspondance
+  /// fiable n'existe (aucune, ou plusieurs crédits du même nom).
+  Future<Credit?> findLinkableCreditForCharge({
+    required String name,
+    required int cycleId,
+    int? excludeChargeId,
+  }) async {
+    final normalized = name.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+
+    final credits = await (db.select(db.credits)..where((c) => c.isActive.equals(true))).get();
+    final matches = credits.where((c) => c.name.trim().toLowerCase() == normalized).toList();
+    if (matches.length != 1) return null;
+    final candidate = matches.first;
+
+    final chargesInCycle = await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycleId))).get();
+    final alreadyLinkedElsewhere =
+        chargesInCycle.any((e) => e.linkedCreditId == candidate.id && e.id != excludeChargeId);
+    return alreadyLinkedElsewhere ? null : candidate;
+  }
+
+  /// Crée un crédit à partir d'une charge fixe déjà existante (ou en cours
+  /// de création) — contrairement à [createCredit], ne génère jamais de
+  /// charge : l'appelant relie explicitement sa charge (déjà là) via
+  /// `linkedCreditId` après l'appel.
+  Future<int> createCreditForExistingCharge({
+    required String name,
+    required int initialAmountCents,
+    required int remainingCapitalCents,
+    required int monthlyPaymentCents,
+    double? annualRatePercent,
+    String? organisme,
+    required DateTime expectedEndDate,
+    required int remainingInstallments,
+    int? paymentDayOfMonth,
+  }) {
+    return db.into(db.credits).insert(CreditsCompanion.insert(
+          name: name,
+          initialAmountCents: initialAmountCents,
+          remainingCapitalCents: remainingCapitalCents,
+          monthlyPaymentCents: monthlyPaymentCents,
+          annualRatePercent: Value(annualRatePercent),
+          organisme: Value(organisme),
+          expectedEndDate: expectedEndDate,
+          remainingInstallments: remainingInstallments,
+          paymentDayOfMonth: Value(paymentDayOfMonth),
+        ));
+  }
+
+  /// Synchronise sur le crédit lié les champs qui appartiennent à la charge
+  /// fixe — nom, mensualité, jour de prélèvement, actif/inactif — chaque
+  /// fois que la charge est enregistrée. Ne touche jamais le capital, le
+  /// taux ou les autres champs propres au crédit.
+  Future<void> syncCreditFromCharge({
+    required int creditId,
+    required String name,
+    required int monthlyPaymentCents,
+    required int paymentDayOfMonth,
+    required bool isActive,
+  }) {
+    return (db.update(db.credits)..where((c) => c.id.equals(creditId))).write(CreditsCompanion(
+      name: Value(name),
+      monthlyPaymentCents: Value(monthlyPaymentCents),
+      paymentDayOfMonth: Value(paymentDayOfMonth),
+      isActive: Value(isActive),
+      updatedAt: Value(DateTime.now()),
+    ));
+  }
+
+  /// Charges fixes de catégorie "Crédit" sans crédit lié — cas hérité
+  /// (migration sans correspondance fiable) ou incohérence à corriger.
+  /// Jamais de doublon créé automatiquement : ces charges restent visibles
+  /// dans la section "Crédits à compléter" jusqu'à ce que l'utilisateur les
+  /// relie ou complète manuellement.
+  Future<List<FixedExpense>> loadUnlinkedCreditCharges() async {
+    final creditCategoryId = await _creditCategoryId();
+    if (creditCategoryId == null) return const [];
+    return (db.select(db.fixedExpenses)
+          ..where((e) => e.categoryId.equals(creditCategoryId) & e.linkedCreditId.isNull()))
+        .get();
+  }
+
+  Stream<List<FixedExpense>> watchUnlinkedCreditCharges() async* {
+    yield await loadUnlinkedCreditCharges();
+    yield* db
+        .tableUpdates(TableUpdateQuery.onAllTables([db.fixedExpenses, db.categories]))
+        .asyncMap((_) => loadUnlinkedCreditCharges());
+  }
+
+  // ---------------------------------------------------------------------
   // Confirmations du jour (V0.9) — Confirmer / Modifier / Reporter / Ignorer
   // ---------------------------------------------------------------------
 
@@ -628,9 +731,14 @@ class CycleRepository {
   /// supplémentaire. Renvoie le résultat de la mise à jour du crédit
   /// lorsqu'il y en a une (`null` sinon), pour permettre à l'appelant de
   /// déclencher la notification appropriée.
+  ///
+  /// Idempotent : une charge déjà "prelevee" ne réapplique jamais son
+  /// paiement au crédit lié (protège contre un double appel, par exemple
+  /// une action de notification traitée deux fois).
   Future<CreditAutoUpdateResult?> confirmFixedExpense(int chargeId, {int? actualAmountCents}) async {
     final charge = await (db.select(db.fixedExpenses)..where((e) => e.id.equals(chargeId))).getSingleOrNull();
     if (charge == null) return null;
+    if (charge.status == ChargeStatus.prelevee) return null;
 
     await (db.update(db.fixedExpenses)..where((e) => e.id.equals(chargeId))).write(
       FixedExpensesCompanion(
