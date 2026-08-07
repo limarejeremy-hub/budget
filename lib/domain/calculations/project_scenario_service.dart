@@ -2,9 +2,19 @@ import '../entities/credit_entity.dart';
 import '../entities/project_entity.dart';
 import 'credit_term_calculator.dart';
 import 'project_feasibility_service.dart';
+import 'project_safety_service.dart';
 
 const _feasibilityService = ProjectFeasibilityService();
+const _safetyService = ProjectSafetyService();
 const _termCalculator = CreditTermCalculator();
+
+/// Un scénario n'est jamais recommandé s'il reste en dessous de ce score de
+/// sécurité financière, même s'il obtient le meilleur score de faisabilité
+/// brut (§9, V1.1) — "la sécurité financière passe avant la simple
+/// faisabilité". Si AUCUN scénario ne l'atteint, BudgetPilot recommande
+/// quand même le meilleur compromis disponible plutôt que de n'en proposer
+/// aucun.
+const int kMinRecommendedSafetyScore = 60;
 
 /// Un crédit lointain (au-delà de cet horizon) n'est jamais proposé comme
 /// "attendre sa fin" — attendre 15 ans n'est pas un scénario réaliste.
@@ -45,6 +55,19 @@ class ProjectScenario {
   final int newScore;
   final int baselineScore;
 
+  /// Score de sécurité financière (V1.1) si ce scénario était appliqué —
+  /// jamais confondu avec [newScore] (faisabilité) : un scénario peut
+  /// améliorer l'un sans améliorer l'autre.
+  final int newSafetyScore;
+  final int baselineSafetyScore;
+
+  /// Taux d'endettement après projet si ce scénario était appliqué (0.0-1.0
+  /// et au-delà).
+  final double newDebtRatioAfter;
+
+  /// Reste à vivre après projet si ce scénario était appliqué.
+  final int newRemainingAfterCents;
+
   const ProjectScenario({
     required this.type,
     required this.label,
@@ -55,9 +78,14 @@ class ProjectScenario {
     required this.newFinancingNeededCents,
     required this.newScore,
     required this.baselineScore,
+    required this.newSafetyScore,
+    required this.baselineSafetyScore,
+    required this.newDebtRatioAfter,
+    required this.newRemainingAfterCents,
   });
 
   int get scoreDelta => newScore - baselineScore;
+  int get safetyDelta => newSafetyScore - baselineSafetyScore;
 }
 
 /// Une étape connue de la trajectoire financière du projet (§7) — construite
@@ -71,12 +99,19 @@ class RoadmapStep {
   const RoadmapStep({required this.label, required this.monthsFromNow, required this.score});
 }
 
-/// Moteur de scénarios et de trajectoire (V1.0 — Project Planner, §7-§10).
-/// Pur et déterministe : compose [ProjectFeasibilityService] sans dupliquer
-/// son calcul de score.
+/// Moteur de scénarios et de trajectoire (V1.0 — Project Planner, §7-§10 ;
+/// enrichi V1.1 — Safe Projects, §8-§9 : chaque scénario recalcule aussi la
+/// sécurité financière, et le chemin recommandé privilégie désormais la
+/// sécurité, jamais uniquement le meilleur score de faisabilité brut). Pur
+/// et déterministe : compose [ProjectFeasibilityService] et
+/// [ProjectSafetyService] sans dupliquer leurs calculs.
 class ProjectScenarioService {
   final ProjectFeasibilityService feasibilityService;
-  const ProjectScenarioService({this.feasibilityService = _feasibilityService});
+  final ProjectSafetyService safetyService;
+  const ProjectScenarioService({
+    this.feasibilityService = _feasibilityService,
+    this.safetyService = _safetyService,
+  });
 
   /// Génère les scénarios réalistes applicables à ce projet. Un scénario
   /// n'est proposé que s'il repose sur des données réelles (crédit actif
@@ -85,6 +120,7 @@ class ProjectScenarioService {
   List<ProjectScenario> generate({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     DateTime? now,
   }) {
@@ -93,14 +129,24 @@ class ProjectScenarioService {
         .evaluate(
             project: project, currentFreeCashCents: currentFreeCashCents, activeCredits: activeCredits, now: today)
         .totalScore;
+    final baselineSafety = safetyService
+        .evaluate(
+          project: project,
+          currentFreeCashCents: currentFreeCashCents,
+          totalIncomeCents: totalIncomeCents,
+          activeCredits: activeCredits,
+        )
+        .totalScore;
 
     final scenarios = <ProjectScenario>[];
 
     final waitScenario = _waitForCreditScenario(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
       baseline: baseline,
+      baselineSafety: baselineSafety,
       today: today,
     );
     if (waitScenario != null) scenarios.add(waitScenario);
@@ -108,8 +154,10 @@ class ProjectScenarioService {
     final contributionScenario = _increaseContributionScenario(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
       baseline: baseline,
+      baselineSafety: baselineSafety,
       today: today,
     );
     if (contributionScenario != null) scenarios.add(contributionScenario);
@@ -117,8 +165,10 @@ class ProjectScenarioService {
     final payoffScenario = _payoffCreditScenario(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
       baseline: baseline,
+      baselineSafety: baselineSafety,
       today: today,
     );
     if (payoffScenario != null) scenarios.add(payoffScenario);
@@ -126,8 +176,10 @@ class ProjectScenarioService {
     final reduceScenario = _reduceTargetScenario(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
       baseline: baseline,
+      baselineSafety: baselineSafety,
       today: today,
     );
     if (reduceScenario != null) scenarios.add(reduceScenario);
@@ -135,8 +187,10 @@ class ProjectScenarioService {
     final extendScenario = _extendHorizonScenario(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
       baseline: baseline,
+      baselineSafety: baselineSafety,
       today: today,
     );
     if (extendScenario != null) scenarios.add(extendScenario);
@@ -144,8 +198,10 @@ class ProjectScenarioService {
     final combinedScenario = _combinedScenario(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
       baseline: baseline,
+      baselineSafety: baselineSafety,
       today: today,
       waitScenario: waitScenario,
       contributionScenario: contributionScenario,
@@ -156,10 +212,12 @@ class ProjectScenarioService {
   }
 
   /// Le "chemin recommandé" (§9) : le meilleur compromis entre gain de
-  /// score et effort (argent mobilisé ou délai), jamais simplement le score
-  /// le plus élevé. Un scénario "réduire le projet" n'est proposé en tête
-  /// que si aucune autre option ne rapproche significativement le projet
-  /// de la faisabilité.
+  /// score et effort (argent mobilisé ou délai) — jamais simplement le
+  /// score de faisabilité le plus élevé, et jamais un scénario dont la
+  /// sécurité financière reste faible (V1.1, §9) même s'il maximise la
+  /// faisabilité brute. Un scénario "réduire le projet" n'est proposé en
+  /// tête que si aucune autre option ne rapproche significativement le
+  /// projet de la faisabilité.
   ProjectScenario? recommend(List<ProjectScenario> scenarios) {
     if (scenarios.isEmpty) return null;
 
@@ -167,8 +225,11 @@ class ProjectScenarioService {
     final meaningful = gentle.where((s) => s.scoreDelta >= 5).toList();
     final candidates = meaningful.isNotEmpty ? meaningful : (gentle.isNotEmpty ? gentle : scenarios);
 
-    candidates.sort((a, b) => _efficiency(b).compareTo(_efficiency(a)));
-    return candidates.first;
+    final safeEnough = candidates.where((s) => s.newSafetyScore >= kMinRecommendedSafetyScore).toList();
+    final pool = safeEnough.isNotEmpty ? safeEnough : candidates;
+
+    pool.sort((a, b) => _efficiency(b).compareTo(_efficiency(a)));
+    return pool.first;
   }
 
   /// Efficacité = gain de score par unité d'effort. L'effort est mesuré en
@@ -261,8 +322,10 @@ class ProjectScenarioService {
   ProjectScenario? _waitForCreditScenario({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     required int baseline,
+    required int baselineSafety,
     required DateTime today,
   }) {
     final candidates = activeCredits
@@ -273,11 +336,18 @@ class ProjectScenarioService {
 
     final credit = candidates.first;
     final remainingCredits = activeCredits.where((c) => c.id != credit.id).toList();
+    final newFreeCash = currentFreeCashCents + credit.monthlyPaymentCents;
     final result = feasibilityService.evaluate(
       project: project,
-      currentFreeCashCents: currentFreeCashCents + credit.monthlyPaymentCents,
+      currentFreeCashCents: newFreeCash,
       activeCredits: remainingCredits,
       now: today,
+    );
+    final safety = safetyService.evaluate(
+      project: project,
+      currentFreeCashCents: newFreeCash,
+      totalIncomeCents: totalIncomeCents,
+      activeCredits: remainingCredits,
     );
 
     return ProjectScenario(
@@ -290,14 +360,20 @@ class ProjectScenarioService {
       newFinancingNeededCents: result.financing.financingNeededCents,
       newScore: result.totalScore,
       baselineScore: baseline,
+      newSafetyScore: safety.totalScore,
+      baselineSafetyScore: baselineSafety,
+      newDebtRatioAfter: safety.debtRatioAfter,
+      newRemainingAfterCents: safety.remainingAfterCents,
     );
   }
 
   ProjectScenario? _increaseContributionScenario({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     required int baseline,
+    required int baselineSafety,
     required DateTime today,
   }) {
     final financingNeeded = feasibilityService.computeFinancing(project).financingNeededCents;
@@ -313,6 +389,12 @@ class ProjectScenarioService {
       activeCredits: activeCredits,
       now: today,
     );
+    final safety = safetyService.evaluate(
+      project: updated,
+      currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
+      activeCredits: activeCredits,
+    );
 
     return ProjectScenario(
       type: ProjectScenarioType.increaseContribution,
@@ -322,14 +404,20 @@ class ProjectScenarioService {
       newFinancingNeededCents: result.financing.financingNeededCents,
       newScore: result.totalScore,
       baselineScore: baseline,
+      newSafetyScore: safety.totalScore,
+      baselineSafetyScore: baselineSafety,
+      newDebtRatioAfter: safety.debtRatioAfter,
+      newRemainingAfterCents: safety.remainingAfterCents,
     );
   }
 
   ProjectScenario? _payoffCreditScenario({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     required int baseline,
+    required int baselineSafety,
     required DateTime today,
   }) {
     final payable = activeCredits
@@ -347,11 +435,18 @@ class ProjectScenarioService {
       project.availableContributionCents - credit.remainingCapitalCents,
     );
     final remainingCredits = activeCredits.where((c) => c.id != credit.id).toList();
+    final newFreeCash = currentFreeCashCents + credit.monthlyPaymentCents;
     final result = feasibilityService.evaluate(
       project: updatedProject,
-      currentFreeCashCents: currentFreeCashCents + credit.monthlyPaymentCents,
+      currentFreeCashCents: newFreeCash,
       activeCredits: remainingCredits,
       now: today,
+    );
+    final safety = safetyService.evaluate(
+      project: updatedProject,
+      currentFreeCashCents: newFreeCash,
+      totalIncomeCents: totalIncomeCents,
+      activeCredits: remainingCredits,
     );
 
     return ProjectScenario(
@@ -364,14 +459,20 @@ class ProjectScenarioService {
       newFinancingNeededCents: result.financing.financingNeededCents,
       newScore: result.totalScore,
       baselineScore: baseline,
+      newSafetyScore: safety.totalScore,
+      baselineSafetyScore: baselineSafety,
+      newDebtRatioAfter: safety.debtRatioAfter,
+      newRemainingAfterCents: safety.remainingAfterCents,
     );
   }
 
   ProjectScenario? _reduceTargetScenario({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     required int baseline,
+    required int baselineSafety,
     required DateTime today,
   }) {
     if (project.targetAmountCents <= 0) return null;
@@ -385,6 +486,12 @@ class ProjectScenarioService {
       activeCredits: activeCredits,
       now: today,
     );
+    final safety = safetyService.evaluate(
+      project: updated,
+      currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
+      activeCredits: activeCredits,
+    );
 
     return ProjectScenario(
       type: ProjectScenarioType.reduceTarget,
@@ -395,14 +502,20 @@ class ProjectScenarioService {
       newFinancingNeededCents: result.financing.financingNeededCents,
       newScore: result.totalScore,
       baselineScore: baseline,
+      newSafetyScore: safety.totalScore,
+      baselineSafetyScore: baselineSafety,
+      newDebtRatioAfter: safety.debtRatioAfter,
+      newRemainingAfterCents: safety.remainingAfterCents,
     );
   }
 
   ProjectScenario? _extendHorizonScenario({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     required int baseline,
+    required int baselineSafety,
     required DateTime today,
   }) {
     final desiredDate = project.desiredDate;
@@ -416,6 +529,12 @@ class ProjectScenarioService {
       activeCredits: activeCredits,
       now: today,
     );
+    final safety = safetyService.evaluate(
+      project: updated,
+      currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
+      activeCredits: activeCredits,
+    );
 
     return ProjectScenario(
       type: ProjectScenarioType.extendHorizon,
@@ -425,14 +544,20 @@ class ProjectScenarioService {
       newFinancingNeededCents: result.financing.financingNeededCents,
       newScore: result.totalScore,
       baselineScore: baseline,
+      newSafetyScore: safety.totalScore,
+      baselineSafetyScore: baselineSafety,
+      newDebtRatioAfter: safety.debtRatioAfter,
+      newRemainingAfterCents: safety.remainingAfterCents,
     );
   }
 
   ProjectScenario? _combinedScenario({
     required ProjectEntity project,
     required int currentFreeCashCents,
+    required int totalIncomeCents,
     required List<CreditEntity> activeCredits,
     required int baseline,
+    required int baselineSafety,
     required DateTime today,
     required ProjectScenario? waitScenario,
     required ProjectScenario? contributionScenario,
@@ -444,12 +569,19 @@ class ProjectScenarioService {
     final increase = contributionScenario.cashRequiredCents ?? 0;
     final updated = _withAvailableContribution(project, project.availableContributionCents + increase);
     final freed = waitScenario.monthlyPaymentFreedCents ?? 0;
+    final newFreeCash = currentFreeCashCents + freed;
 
     final result = feasibilityService.evaluate(
       project: updated,
-      currentFreeCashCents: currentFreeCashCents + freed,
+      currentFreeCashCents: newFreeCash,
       activeCredits: remainingCredits,
       now: today,
+    );
+    final safety = safetyService.evaluate(
+      project: updated,
+      currentFreeCashCents: newFreeCash,
+      totalIncomeCents: totalIncomeCents,
+      activeCredits: remainingCredits,
     );
 
     return ProjectScenario(
@@ -462,6 +594,10 @@ class ProjectScenarioService {
       newFinancingNeededCents: result.financing.financingNeededCents,
       newScore: result.totalScore,
       baselineScore: baseline,
+      newSafetyScore: safety.totalScore,
+      baselineSafetyScore: baselineSafety,
+      newDebtRatioAfter: safety.debtRatioAfter,
+      newRemainingAfterCents: safety.remainingAfterCents,
     );
   }
 
@@ -482,6 +618,7 @@ class ProjectScenarioService {
         extraMonthlyCostCents: project.extraMonthlyCostCents,
         notes: project.notes,
         isActive: project.isActive,
+        priority: project.priority,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
       );
@@ -504,6 +641,7 @@ class ProjectScenarioService {
         extraMonthlyCostCents: project.extraMonthlyCostCents,
         notes: project.notes,
         isActive: project.isActive,
+        priority: project.priority,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
       );
@@ -523,6 +661,7 @@ class ProjectScenarioService {
         extraMonthlyCostCents: project.extraMonthlyCostCents,
         notes: project.notes,
         isActive: project.isActive,
+        priority: project.priority,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
       );

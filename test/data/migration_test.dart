@@ -69,13 +69,13 @@ void main() {
     expect(data.fixedExpenses.singleWhere((e) => e.id == chargeId).name, 'Loyer');
     expect(data.fixedExpenses.singleWhere((e) => e.id == chargeId).expectedAmountCents, 70000);
 
-    // La base migre jusqu'à la version de schéma courante (6), pas
-    // seulement jusqu'à 2 : onUpgrade(1, 6) enchaîne toutes les étapes
+    // La base migre jusqu'à la version de schéma courante (7), pas
+    // seulement jusqu'à 2 : onUpgrade(1, 7) enchaîne toutes les étapes
     // (colonne `name`, table `credits`, colonnes organisme/couleur/icône,
-    // jour de prélèvement/assurance/lien de charge/notifications, puis
-    // table `projects`).
+    // jour de prélèvement/assurance/lien de charge/notifications, table
+    // `projects`, puis colonne `priority`).
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 6, reason: 'le marqueur de version doit être mis à jour');
+    expect(versionRow.data['user_version'], 7, reason: 'le marqueur de version doit être mis à jour');
 
     await db.close();
   });

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/credits_providers.dart';
 import '../../core/providers/dashboard_providers.dart';
@@ -10,18 +11,21 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
+import '../../domain/calculations/project_health_service.dart';
+import '../../domain/calculations/project_safety_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import '../../domain/entities/project_entity.dart';
 import 'project_detail_page.dart';
 import 'project_form_page.dart';
 import 'project_visuals.dart';
 
-const _feasibilityService = ProjectFeasibilityService();
+const _healthService = ProjectHealthService();
 const _creditCalculationService = CreditCalculationService();
 
-/// Page "Projets" (V1.0 — Project Planner, §13) : "puis-je réellement
-/// réaliser ce projet ?" pour chaque projet actif — jamais une simple jauge
-/// d'épargne.
+/// Page "Projets" (V1.0 — Project Planner, §13 ; multi-projets et double
+/// score V1.1, §1/§12) : "puis-je réellement réaliser ce projet ?" pour
+/// chaque projet actif — jamais une simple jauge d'épargne, jamais limitée
+/// à un seul projet à la fois.
 class ProjectsPage extends ConsumerWidget {
   const ProjectsPage({super.key});
 
@@ -41,8 +45,10 @@ class ProjectsPage extends ConsumerWidget {
             if (projects.isEmpty) return const _EmptyProjects();
 
             final currentFreeCashCents = dashboardAsync.valueOrNull?.realRemainingCents ?? 0;
+            final totalIncomeCents = dashboardAsync.valueOrNull?.totalIncomeCents ?? 0;
             final activeCredits = _creditCalculationService.activeOnly(creditsAsync.valueOrNull ?? const []);
-            final active = projects.where((p) => p.isActive).toList();
+            final active = projects.where((p) => p.isActive).toList()
+              ..sort((a, b) => ProjectPriority.rank(a.priority).compareTo(ProjectPriority.rank(b.priority)));
             final archived = projects.where((p) => !p.isActive).toList();
 
             return ListView(
@@ -57,6 +63,7 @@ class ProjectsPage extends ConsumerWidget {
                       child: _ProjectCard(
                         project: project,
                         currentFreeCashCents: currentFreeCashCents,
+                        totalIncomeCents: totalIncomeCents,
                         activeCredits: activeCredits,
                       ),
                     ),
@@ -74,6 +81,7 @@ class ProjectsPage extends ConsumerWidget {
                           child: _ProjectCard(
                             project: project,
                             currentFreeCashCents: currentFreeCashCents,
+                            totalIncomeCents: totalIncomeCents,
                             activeCredits: activeCredits,
                           ),
                         ),
@@ -123,22 +131,26 @@ class _EmptyProjects extends StatelessWidget {
 class _ProjectCard extends StatelessWidget {
   final ProjectEntity project;
   final int currentFreeCashCents;
+  final int totalIncomeCents;
   final List<CreditEntity> activeCredits;
 
   const _ProjectCard({
     required this.project,
     required this.currentFreeCashCents,
+    required this.totalIncomeCents,
     required this.activeCredits,
   });
 
   @override
   Widget build(BuildContext context) {
-    final result = _feasibilityService.evaluate(
+    final health = _healthService.evaluate(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
     );
-    final color = feasibilityLevelColor(result.level);
+    final feasibilityColor = feasibilityLevelColor(health.feasibility.level);
+    final safetyColor = financialSafetyLevelColor(health.safety.level);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -181,31 +193,34 @@ class _ProjectCard extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(AppRadii.sm),
                 child: LinearProgressIndicator(
-                  value: result.totalScore / 100,
+                  value: health.feasibility.totalScore / 100,
                   minHeight: 8,
                   backgroundColor: colorScheme.surfaceContainerHighest,
-                  color: color,
+                  color: feasibilityColor,
                 ),
               ),
               const SizedBox(height: AppSpacing.sm),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    '${result.totalScore}%',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                  Text('Faisabilité ${health.feasibility.totalScore}%', style: Theme.of(context).textTheme.bodySmall),
+                  Text('Sécurité ${health.safety.totalScore}%', style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Wrap(
+                spacing: AppSpacing.xs,
+                runSpacing: AppSpacing.xs,
+                children: [
+                  _LevelChip(
+                    text:
+                        '${feasibilityLevelEmoji(health.feasibility.level)} ${feasibilityLevelLabel(health.feasibility.level)}',
+                    color: feasibilityColor,
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(AppRadii.sm),
-                    ),
-                    child: Text(
-                      '${feasibilityLevelEmoji(result.level)} ${feasibilityLevelLabel(result.level)}',
-                      style:
-                          Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600),
-                    ),
+                  _LevelChip(
+                    text:
+                        '${financialSafetyLevelEmoji(health.safety.level)} Budget ${financialSafetyLevelLabel(health.safety.level).toLowerCase()}',
+                    color: safetyColor,
                   ),
                 ],
               ),
@@ -219,6 +234,27 @@ class _ProjectCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _LevelChip extends StatelessWidget {
+  final String text;
+  final Color color;
+  const _LevelChip({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+      ),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600),
       ),
     );
   }

@@ -10,6 +10,8 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
+import '../../domain/calculations/project_health_service.dart';
+import '../../domain/calculations/project_safety_service.dart';
 import '../../domain/calculations/project_scenario_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import '../../domain/entities/project_entity.dart';
@@ -17,14 +19,14 @@ import 'project_form_page.dart';
 import 'project_visuals.dart';
 import 'widgets/project_simulator_sheet.dart';
 
-const _feasibilityService = ProjectFeasibilityService();
+const _healthService = ProjectHealthService();
 const _scenarioService = ProjectScenarioService();
 const _creditCalculationService = CreditCalculationService();
 
-/// Fiche détaillée d'un projet (V1.0 — Project Planner, §12) : score de
-/// faisabilité, situation financière, ce qui bloque, ce qui va s'améliorer,
-/// chemin recommandé, autres scénarios, roadmap. Toujours recalculé à la
-/// volée à partir des données courantes — jamais un résultat figé (§18).
+/// Fiche détaillée d'un projet (V1.0 — Project Planner, §12 ; enrichie
+/// V1.1 — Safe Projects, §11 : sécurité financière, taux d'endettement,
+/// reste à vivre). Toujours recalculée à la volée à partir des données
+/// courantes — jamais un résultat figé (§18).
 class ProjectDetailPage extends ConsumerWidget {
   final int projectId;
   const ProjectDetailPage({super.key, required this.projectId});
@@ -71,6 +73,7 @@ class ProjectDetailPage extends ConsumerWidget {
                 return _ProjectDetailBody(
                   project: project!,
                   currentFreeCashCents: dashboard.realRemainingCents,
+                  totalIncomeCents: dashboard.totalIncomeCents,
                   activeCredits: activeCredits,
                 );
               },
@@ -85,24 +88,28 @@ class ProjectDetailPage extends ConsumerWidget {
 class _ProjectDetailBody extends ConsumerWidget {
   final ProjectEntity project;
   final int currentFreeCashCents;
+  final int totalIncomeCents;
   final List<CreditEntity> activeCredits;
 
   const _ProjectDetailBody({
     required this.project,
     required this.currentFreeCashCents,
+    required this.totalIncomeCents,
     required this.activeCredits,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final result = _feasibilityService.evaluate(
+    final health = _healthService.evaluate(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
     );
     final scenarios = _scenarioService.generate(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
     );
     final recommended = _scenarioService.recommend(scenarios);
@@ -112,27 +119,29 @@ class _ProjectDetailBody extends ConsumerWidget {
       currentFreeCashCents: currentFreeCashCents,
       activeCredits: activeCredits,
     );
-    final color = feasibilityLevelColor(result.level);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 88),
       children: [
-        _HeaderSection(project: project, result: result, color: color),
+        _HeaderSection(project: project, health: health),
         const SizedBox(height: AppSpacing.xl),
         _ActionsRow(
           project: project,
           currentFreeCashCents: currentFreeCashCents,
+          totalIncomeCents: totalIncomeCents,
           activeCredits: activeCredits,
         ),
         const SizedBox(height: AppSpacing.xl),
-        _SituationSection(result: result),
-        if (result.blockers.isNotEmpty) ...[
+        _SituationSection(result: health.feasibility),
+        const SizedBox(height: AppSpacing.xl),
+        _SafetySection(safety: health.safety),
+        if (health.blockers.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xl),
-          _BlockersSection(blockers: result.blockers),
+          _BlockersSection(blockers: health.blockers),
         ],
-        if (result.upcomingImprovements.isNotEmpty) ...[
+        if (health.feasibility.upcomingImprovements.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xl),
-          _ImprovementsSection(improvements: result.upcomingImprovements),
+          _ImprovementsSection(improvements: health.feasibility.upcomingImprovements),
         ],
         if (recommended != null) ...[
           const SizedBox(height: AppSpacing.xl),
@@ -160,13 +169,14 @@ class _ProjectDetailBody extends ConsumerWidget {
 
 class _HeaderSection extends StatelessWidget {
   final ProjectEntity project;
-  final ProjectFeasibilityResult result;
-  final Color color;
-  const _HeaderSection({required this.project, required this.result, required this.color});
+  final ProjectHealthResult health;
+  const _HeaderSection({required this.project, required this.health});
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final feasibilityColor = feasibilityLevelColor(health.feasibility.level);
+    final safetyColor = financialSafetyLevelColor(health.safety.level);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -192,42 +202,60 @@ class _HeaderSection extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         Row(
           children: [
-            SizedBox(
-              width: 56,
-              height: 56,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    value: result.totalScore / 100,
-                    strokeWidth: 5,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    color: color,
-                  ),
-                  Text('${result.totalScore}', style: Theme.of(context).textTheme.titleMedium),
-                ],
+            Expanded(
+              child: _ScoreBadge(
+                label: 'Faisabilité',
+                score: health.feasibility.totalScore,
+                color: feasibilityColor,
+                levelText:
+                    '${feasibilityLevelEmoji(health.feasibility.level)} ${feasibilityLevelLabel(health.feasibility.level)}',
               ),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${feasibilityLevelEmoji(result.level)} ${feasibilityLevelLabel(result.level)}',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w700),
-                  ),
-                  if (result.blockers.isNotEmpty)
-                    Text(
-                      'Il manque encore un peu de marge pour réaliser ce projet confortablement.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
-                    ),
-                ],
+              child: _ScoreBadge(
+                label: 'Sécurité',
+                score: health.safety.totalScore,
+                color: safetyColor,
+                levelText:
+                    '${financialSafetyLevelEmoji(health.safety.level)} ${financialSafetyLevelLabel(health.safety.level)}',
               ),
             ),
           ],
         ),
+        const SizedBox(height: AppSpacing.md),
+        Text(health.conclusion, style: Theme.of(context).textTheme.bodyMedium),
       ],
+    );
+  }
+}
+
+class _ScoreBadge extends StatelessWidget {
+  final String label;
+  final int score;
+  final Color color;
+  final String levelText;
+  const _ScoreBadge({required this.label, required this.score, required this.color, required this.levelText});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 2),
+          Text('$score%',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w700)),
+          Text(levelText, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
     );
   }
 }
@@ -235,10 +263,12 @@ class _HeaderSection extends StatelessWidget {
 class _ActionsRow extends ConsumerWidget {
   final ProjectEntity project;
   final int currentFreeCashCents;
+  final int totalIncomeCents;
   final List<CreditEntity> activeCredits;
   const _ActionsRow({
     required this.project,
     required this.currentFreeCashCents,
+    required this.totalIncomeCents,
     required this.activeCredits,
   });
 
@@ -252,6 +282,7 @@ class _ActionsRow extends ConsumerWidget {
               context,
               project: project,
               currentFreeCashCents: currentFreeCashCents,
+              totalIncomeCents: totalIncomeCents,
               activeCredits: activeCredits,
             ),
             icon: const Icon(Icons.tune_rounded),
@@ -273,6 +304,11 @@ class _ActionsRow extends ConsumerWidget {
             final repository = ref.read(cycleRepositoryProvider);
             if (value == 'archive') {
               await repository.setProjectActive(project.id, !project.isActive);
+            } else if (value == 'duplicate') {
+              await repository.duplicateProject(project.id);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Projet dupliqué')));
+              }
             } else if (value == 'delete') {
               final confirmed = await confirmDelete(context, title: 'Supprimer "${project.name}" ?');
               if (confirmed && context.mounted) {
@@ -286,6 +322,7 @@ class _ActionsRow extends ConsumerWidget {
               value: 'archive',
               child: Text(project.isActive ? 'Archiver' : 'Réactiver'),
             ),
+            const PopupMenuItem(value: 'duplicate', child: Text('Dupliquer')),
             const PopupMenuItem(value: 'delete', child: Text('Supprimer')),
           ],
         ),
@@ -341,6 +378,58 @@ class _SituationSection extends StatelessWidget {
             _SituationRow('Coûts supplémentaires', formatCentsAsEuro(financing.extraMonthlyCostCents)),
           _SituationRow('Impact mensuel', formatCentsAsEuro(financing.totalMonthlyImpactCents)),
           _SituationRow('Marge restante', formatCentsAsEuro(result.marginAfterCents)),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Sécurité après projet" (§11 V1.1) — reste à vivre, taux d'endettement,
+/// marge consommée, score de sécurité, jamais une décision bancaire.
+class _SafetySection extends StatelessWidget {
+  final ProjectSafetyResult safety;
+  const _SafetySection({required this.safety});
+
+  @override
+  Widget build(BuildContext context) {
+    final debtBand = debtRatioBandFor(safety.debtRatioAfter);
+    final color = financialSafetyLevelColor(safety.level);
+    return _SectionCard(
+      title: 'Sécurité après projet',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _SituationRow('Reste à vivre actuel', formatCentsAsEuro(safety.remainingBeforeCents)),
+          _SituationRow('Reste à vivre après projet', formatCentsAsEuro(safety.remainingAfterCents)),
+          _SituationRow(
+            'Taux d\'endettement actuel',
+            '${(safety.debtRatioBefore * 100).round()} %',
+          ),
+          _SituationRow(
+            'Taux après projet ${debtRatioBandEmoji(debtBand)}',
+            '${(safety.debtRatioAfter * 100).round()} %',
+          ),
+          _SituationRow(
+              'Marge consommée par le projet', '${formatCentsAsEuro(safety.marginConsumedByProjectCents)}/mois'),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              Text('Score sécurité', style: Theme.of(context).textTheme.bodyMedium),
+              const Spacer(),
+              Text(
+                '${safety.totalScore}% ${financialSafetyLevelEmoji(safety.level)}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(safety.alertMessage, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Repères de taux d\'endettement internes à BudgetPilot — jamais une règle d\'acceptation bancaire.',
+            style:
+                Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
         ],
       ),
     );
@@ -439,10 +528,7 @@ class _RecommendedPathSection extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text(scenario.description, style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: AppSpacing.sm),
-            Text(
-              'Faisabilité : ${scenario.baselineScore}% → ${scenario.newScore}%',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-            ),
+            _ScenarioMetricsGrid(scenario: scenario),
           ],
         ),
       ),
@@ -464,24 +550,51 @@ class _OtherScenariosSection extends StatelessWidget {
           for (final scenario in scenarios)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.md),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(scenario.label,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-                        Text(scenario.description, style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ),
-                  Text('${scenario.baselineScore}% → ${scenario.newScore}%',
-                      style: Theme.of(context).textTheme.labelMedium),
+                  Text(scenario.label,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                  Text(scenario.description, style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: AppSpacing.xs),
+                  _ScenarioMetricsGrid(scenario: scenario),
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Faisabilité / Sécurité / Endettement / Reste à vivre pour un scénario
+/// (§8 V1.1) — jamais uniquement le score de faisabilité.
+class _ScenarioMetricsGrid extends StatelessWidget {
+  final ProjectScenario scenario;
+  const _ScenarioMetricsGrid({required this.scenario});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Wrap(
+      spacing: AppSpacing.lg,
+      runSpacing: AppSpacing.xs,
+      children: [
+        _metric(context, 'Faisabilité', '${scenario.baselineScore}% → ${scenario.newScore}%'),
+        _metric(context, 'Sécurité', '${scenario.baselineSafetyScore}% → ${scenario.newSafetyScore}%'),
+        _metric(context, 'Endettement', '${(scenario.newDebtRatioAfter * 100).round()} %'),
+        _metric(context, 'Reste à vivre', formatCentsAsEuro(scenario.newRemainingAfterCents)),
+      ].map((w) => DefaultTextStyle.merge(style: TextStyle(color: colorScheme.onSurfaceVariant), child: w)).toList(),
+    );
+  }
+
+  Widget _metric(BuildContext context, String label, String value) {
+    return RichText(
+      text: TextSpan(
+        style: Theme.of(context).textTheme.labelSmall,
+        children: [
+          TextSpan(text: '$label : '),
+          TextSpan(text: value, style: const TextStyle(fontWeight: FontWeight.w700)),
         ],
       ),
     );

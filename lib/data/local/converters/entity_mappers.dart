@@ -115,6 +115,7 @@ ProjectEntity projectFromRow(Project row) => ProjectEntity(
       extraMonthlyCostCents: row.extraMonthlyCostCents,
       notes: row.notes,
       isActive: row.isActive,
+      priority: row.priority,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     );

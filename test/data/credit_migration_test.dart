@@ -42,7 +42,7 @@ void main() {
     await db.customStatement('PRAGMA user_version = 2');
     await db.close();
 
-    // 2. Rouvrir avec AppDatabase (schemaVersion 6) : Drift doit exécuter
+    // 2. Rouvrir avec AppDatabase (schemaVersion 7) : Drift doit exécuter
     // automatiquement migration.onUpgrade(m, 2, 5), qui recrée la table
     // credits — déjà avec toutes les colonnes actuelles puisque
     // `createTable` matérialise la définition Dart actuelle — sans jamais
@@ -71,7 +71,7 @@ void main() {
     expect(creditId, greaterThan(0));
 
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 6, reason: 'le marqueur de version doit être mis à jour');
+    expect(versionRow.data['user_version'], 7, reason: 'le marqueur de version doit être mis à jour');
 
     await db.close();
   });
@@ -106,7 +106,7 @@ void main() {
     await db.customStatement('PRAGMA user_version = 3');
     await db.close();
 
-    // 2. Rouvrir avec AppDatabase (schemaVersion 6) : Drift doit exécuter
+    // 2. Rouvrir avec AppDatabase (schemaVersion 7) : Drift doit exécuter
     // onUpgrade(m, 3, 5), qui ajoute les 3 colonnes de la v4 via addColumn
     // (le crédit existant n'est jamais supprimé), puis enchaîne vers v5.
     db = AppDatabase.forTesting(NativeDatabase(dbFile));
@@ -121,7 +121,7 @@ void main() {
     expect(credits.single.iconCodePoint, isNull);
 
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 6);
+    expect(versionRow.data['user_version'], 7);
 
     await db.close();
   });
@@ -175,7 +175,7 @@ void main() {
     await db.customStatement('PRAGMA user_version = 4');
     await db.close();
 
-    // 2. Rouvrir avec AppDatabase (schemaVersion 6) : Drift doit exécuter
+    // 2. Rouvrir avec AppDatabase (schemaVersion 7) : Drift doit exécuter
     // onUpgrade(m, 4, 5), qui ajoute les colonnes manquantes, recrée
     // notification_logs, et relie automatiquement la charge "Voiture"
     // (catégorie Crédit) au crédit "Voiture" par correspondance de nom.
@@ -197,7 +197,7 @@ void main() {
     expect(notificationLogs, isEmpty, reason: 'la table notification_logs doit être utilisable, vide');
 
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 6);
+    expect(versionRow.data['user_version'], 7);
 
     await db.close();
   });
@@ -237,7 +237,7 @@ void main() {
     await db.customStatement('PRAGMA user_version = 5');
     await db.close();
 
-    // Rouvrir avec AppDatabase (schemaVersion 6) : Drift exécute
+    // Rouvrir avec AppDatabase (schemaVersion 7) : Drift exécute
     // onUpgrade(m, 5, 6), qui crée uniquement la table `projects` — aucune
     // autre donnée n'est touchée.
     db = AppDatabase.forTesting(NativeDatabase(dbFile));
@@ -261,7 +261,60 @@ void main() {
     expect((await repository.loadProjects()).single.id, projectId);
 
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 6);
+    expect(versionRow.data['user_version'], 7);
+
+    await db.close();
+  });
+
+  test('migration v6 -> v7 ajoute la priorité aux projets sans perdre les projets existants', () async {
+    final tempDir = await Directory.systemTemp.createTemp('budgetpilot_credit_migration_test');
+    final dbFile = File('${tempDir.path}/budgetpilot.sqlite');
+    addTearDown(() => tempDir.delete(recursive: true));
+
+    var db = AppDatabase.forTesting(NativeDatabase(dbFile));
+    var repository = CycleRepository(db);
+
+    final creditId = await repository.createCreditForExistingCharge(
+      name: 'Voiture',
+      initialAmountCents: 1500000,
+      remainingCapitalCents: 900000,
+      monthlyPaymentCents: 25000,
+      expectedEndDate: DateTime(2029, 1, 1),
+      remainingInstallments: 36,
+    );
+    final projectId = await repository.createProject(
+      name: 'Porsche Boxster',
+      category: ProjectCategory.car,
+      targetAmountCents: 4000000,
+      availableContributionCents: 800000,
+      financingMode: ProjectFinancingMode.mixed,
+    );
+
+    // La colonne `priority` n'existe pas encore en v6 (V1.1 l'introduit) :
+    // on la supprime pour simuler fidèlement un appareil resté sur cette
+    // version.
+    await db.customStatement('ALTER TABLE projects DROP COLUMN priority');
+    await db.customStatement('PRAGMA user_version = 6');
+    await db.close();
+
+    // Rouvrir avec AppDatabase (schemaVersion 7) : Drift exécute
+    // onUpgrade(m, 6, 7), qui ajoute uniquement la colonne `priority` — avec
+    // sa valeur par défaut "moyenne" pour les projets déjà enregistrés.
+    db = AppDatabase.forTesting(NativeDatabase(dbFile));
+    repository = CycleRepository(db);
+
+    final credits = await repository.loadCredits();
+    expect(credits, hasLength(1), reason: 'le crédit existant doit survivre à la migration');
+    expect(credits.single.id, creditId);
+
+    final projects = await repository.loadProjects();
+    expect(projects, hasLength(1), reason: 'le projet existant doit survivre à la migration');
+    expect(projects.single.id, projectId);
+    expect(projects.single.priority, ProjectPriority.medium,
+        reason: 'un projet migré reçoit la priorité par défaut, jamais une valeur inventée');
+
+    final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
+    expect(versionRow.data['user_version'], 7);
 
     await db.close();
   });

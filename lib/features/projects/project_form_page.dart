@@ -36,6 +36,7 @@ class _ProjectFormPageState extends ConsumerState<ProjectFormPage> {
 
   late String _category;
   late String _financingMode;
+  late String _priority;
   late bool _hasDesiredDate;
   late DateTime _desiredDate;
   bool _saving = false;
@@ -73,6 +74,7 @@ class _ProjectFormPageState extends ConsumerState<ProjectFormPage> {
 
     _category = existing?.category ?? ProjectCategory.other;
     _financingMode = existing?.financingMode ?? ProjectFinancingMode.undetermined;
+    _priority = existing?.priority ?? ProjectPriority.medium;
     _hasDesiredDate = existing?.desiredDate != null;
     _desiredDate = existing?.desiredDate ?? DateTime.now().add(const Duration(days: 365));
   }
@@ -124,6 +126,7 @@ class _ProjectFormPageState extends ConsumerState<ProjectFormPage> {
           estimatedRatePercent: rate,
           extraMonthlyCostCents: extraMonthlyCost,
           notes: notes,
+          priority: _priority,
         );
       } else {
         await repository.createProject(
@@ -139,6 +142,7 @@ class _ProjectFormPageState extends ConsumerState<ProjectFormPage> {
           estimatedRatePercent: rate,
           extraMonthlyCostCents: extraMonthlyCost,
           notes: notes,
+          priority: _priority,
         );
       }
       if (mounted) Navigator.of(context).pop();
@@ -171,6 +175,16 @@ class _ProjectFormPageState extends ConsumerState<ProjectFormPage> {
                     DropdownMenuItem(value: category, child: Text(projectCategoryLabel(category))),
                 ],
                 onChanged: (value) => setState(() => _category = value ?? _category),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              DropdownButtonFormField<String>(
+                initialValue: _priority,
+                decoration: const InputDecoration(labelText: 'Priorité du projet'),
+                items: [
+                  for (final priority in ProjectPriority.all)
+                    DropdownMenuItem(value: priority, child: Text(projectPriorityLabel(priority))),
+                ],
+                onChanged: (value) => setState(() => _priority = value ?? _priority),
               ),
               const SizedBox(height: AppSpacing.lg),
               EuroAmountField(controller: _targetAmountController, label: 'Prix / budget cible'),

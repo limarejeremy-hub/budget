@@ -51,6 +51,10 @@ class ProjectEntity {
   /// silencieusement).
   final bool isActive;
 
+  /// Une des valeurs de [ProjectPriority] — utilisée pour choisir le projet
+  /// mis en avant sur la Home quand plusieurs projets sont actifs (V1.1).
+  final String priority;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -69,6 +73,7 @@ class ProjectEntity {
     this.extraMonthlyCostCents,
     this.notes,
     this.isActive = true,
+    this.priority = ProjectPriority.medium,
     required this.createdAt,
     required this.updatedAt,
   });

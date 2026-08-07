@@ -1,23 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/formatting/currency_formatter.dart';
 import '../../../core/providers/dashboard_providers.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../../core/widgets/euro_amount_field.dart';
-import '../../../domain/calculations/project_feasibility_service.dart';
+import '../../../domain/calculations/project_health_service.dart';
+import '../../../domain/calculations/project_safety_service.dart';
 import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/project_entity.dart';
 import '../project_visuals.dart';
 
-const _feasibilityService = ProjectFeasibilityService();
+const _healthService = ProjectHealthService();
 
-/// Simulateur interactif (§15) : teste un apport ou un prix cible différent
+/// Simulateur interactif (§15 V1.0, enrichi §14 V1.1) : teste un apport ou
+/// un prix cible différent et affiche immédiatement AVANT → APRÈS pour les
+/// quatre indicateurs (faisabilité, sécurité, endettement, reste à vivre) —
 /// sans jamais modifier les vraies données tant que l'utilisateur n'a pas
 /// explicitement choisi "Enregistrer cet apport".
 Future<void> showProjectSimulatorSheet(
   BuildContext context, {
   required ProjectEntity project,
   required int currentFreeCashCents,
+  required int totalIncomeCents,
   required List<CreditEntity> activeCredits,
 }) {
   return showModalBottomSheet<void>(
@@ -28,6 +33,7 @@ Future<void> showProjectSimulatorSheet(
     builder: (_) => ProjectSimulatorSheet(
       project: project,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
     ),
   );
@@ -36,12 +42,14 @@ Future<void> showProjectSimulatorSheet(
 class ProjectSimulatorSheet extends ConsumerStatefulWidget {
   final ProjectEntity project;
   final int currentFreeCashCents;
+  final int totalIncomeCents;
   final List<CreditEntity> activeCredits;
 
   const ProjectSimulatorSheet({
     super.key,
     required this.project,
     required this.currentFreeCashCents,
+    required this.totalIncomeCents,
     required this.activeCredits,
   });
 
@@ -97,6 +105,7 @@ class _ProjectSimulatorSheetState extends ConsumerState<ProjectSimulatorSheet> {
       extraMonthlyCostCents: widget.project.extraMonthlyCostCents,
       notes: widget.project.notes,
       isActive: widget.project.isActive,
+      priority: widget.project.priority,
       createdAt: widget.project.createdAt,
       updatedAt: widget.project.updatedAt,
     );
@@ -121,6 +130,7 @@ class _ProjectSimulatorSheetState extends ConsumerState<ProjectSimulatorSheet> {
         estimatedRatePercent: widget.project.estimatedRatePercent,
         extraMonthlyCostCents: widget.project.extraMonthlyCostCents,
         notes: widget.project.notes,
+        priority: widget.project.priority,
       );
       if (mounted) Navigator.of(context).pop();
     } finally {
@@ -130,17 +140,18 @@ class _ProjectSimulatorSheetState extends ConsumerState<ProjectSimulatorSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final baseline = _feasibilityService.evaluate(
+    final baseline = _healthService.evaluate(
       project: widget.project,
       currentFreeCashCents: widget.currentFreeCashCents,
+      totalIncomeCents: widget.totalIncomeCents,
       activeCredits: widget.activeCredits,
     );
-    final simulated = _feasibilityService.evaluate(
+    final simulated = _healthService.evaluate(
       project: _simulatedProject,
       currentFreeCashCents: widget.currentFreeCashCents,
+      totalIncomeCents: widget.totalIncomeCents,
       activeCredits: widget.activeCredits,
     );
-    final colorScheme = Theme.of(context).colorScheme;
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -161,29 +172,7 @@ class _ProjectSimulatorSheetState extends ConsumerState<ProjectSimulatorSheet> {
             const SizedBox(height: AppSpacing.lg),
             EuroAmountField(controller: _targetController, label: 'Prix / budget cible'),
             const SizedBox(height: AppSpacing.xl),
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.lg),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(AppRadii.md),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('${baseline.totalScore}%', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(width: AppSpacing.sm),
-                  const Icon(Icons.arrow_forward_rounded),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text(
-                    '${simulated.totalScore}%',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: feasibilityLevelColor(simulated.level),
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ],
-              ),
-            ),
+            _SimulationResultCard(baseline: baseline, simulated: simulated),
             const SizedBox(height: AppSpacing.xl),
             FilledButton(
               onPressed: _saving ? null : _saveContribution,
@@ -191,6 +180,93 @@ class _ProjectSimulatorSheetState extends ConsumerState<ProjectSimulatorSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _SimulationResultCard extends StatelessWidget {
+  final ProjectHealthResult baseline;
+  final ProjectHealthResult simulated;
+  const _SimulationResultCard({required this.baseline, required this.simulated});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _MetricRow(
+            label: 'Faisabilité',
+            before: '${baseline.feasibility.totalScore}%',
+            after: '${simulated.feasibility.totalScore}%',
+            afterColor: feasibilityLevelColor(simulated.feasibility.level),
+          ),
+          _MetricRow(
+            label: 'Sécurité',
+            before: '${baseline.safety.totalScore}%',
+            after: '${simulated.safety.totalScore}%',
+            afterColor: financialSafetyLevelColor(simulated.safety.level),
+          ),
+          _MetricRow(
+            label: 'Endettement',
+            before: '${(baseline.safety.debtRatioAfter * 100).round()} %',
+            after: '${(simulated.safety.debtRatioAfter * 100).round()} %',
+            afterColor: debtRatioBandColor(debtRatioBandFor(simulated.safety.debtRatioAfter)),
+          ),
+          _MetricRow(
+            label: 'Reste à vivre',
+            before: formatCentsAsEuro(baseline.safety.remainingAfterCents),
+            after: formatCentsAsEuro(simulated.safety.remainingAfterCents),
+            afterColor: financialSafetyLevelColor(simulated.safety.level),
+            isLast: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  final String label;
+  final String before;
+  final String after;
+  final Color afterColor;
+  final bool isLast;
+  const _MetricRow({
+    required this.label,
+    required this.before,
+    required this.after,
+    required this.afterColor,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : AppSpacing.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          Text(before, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+            child: Icon(Icons.arrow_forward_rounded, size: 16),
+          ),
+          Text(
+            after,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: afterColor, fontWeight: FontWeight.w700),
+          ),
+        ],
       ),
     );
   }

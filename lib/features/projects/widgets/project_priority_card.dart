@@ -1,27 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/providers/credits_providers.dart';
 import '../../../core/providers/dashboard_providers.dart';
 import '../../../core/providers/projects_providers.dart';
 import '../../../core/routing/app_page_route.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../../domain/calculations/credit_calculation_service.dart';
-import '../../../domain/calculations/project_feasibility_service.dart';
-import '../../../domain/calculations/project_scenario_service.dart';
+import '../../../domain/calculations/project_health_service.dart';
+import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/project_entity.dart';
 import '../project_detail_page.dart';
 import '../project_visuals.dart';
 import '../projects_page.dart';
 
-const _feasibilityService = ProjectFeasibilityService();
-const _scenarioService = ProjectScenarioService();
+const _healthService = ProjectHealthService();
 const _creditCalculationService = CreditCalculationService();
 
 /// Carte "Projets" de la Home — point d'entrée naturel vers le module
-/// Projets (§1), qui devient la carte "Projet prioritaire" (§14) dès qu'un
-/// projet actif existe : un seul projet mis en avant, jamais toute la
-/// liste, jamais une grande zone vide.
+/// Projets (§1), qui devient la carte "Projet prioritaire" (§14 V1.0, §13
+/// V1.1) dès qu'un projet actif existe : un seul projet mis en avant,
+/// jamais toute la liste, jamais une grande zone vide.
 class ProjectPriorityCard extends ConsumerWidget {
   const ProjectPriorityCard({super.key});
 
@@ -40,44 +40,32 @@ class ProjectPriorityCard extends ConsumerWidget {
 
     final activeCredits = _creditCalculationService.activeOnly(creditsAsync.valueOrNull ?? const []);
     final currentFreeCashCents = dashboard.realRemainingCents;
+    final totalIncomeCents = dashboard.totalIncomeCents;
 
-    // Priorité : le projet actif dont le score n'est pas déjà maximal et
-    // qui s'en approche le plus — celui pour lequel un petit effort
-    // supplémentaire rapproche le plus concrètement de la réalisation.
-    ProjectEntity? priority;
-    var priorityScore = -1;
-    for (final project in active) {
-      final score = _feasibilityService
-          .evaluate(project: project, currentFreeCashCents: currentFreeCashCents, activeCredits: activeCredits)
-          .totalScore;
-      if (score < 100 && score > priorityScore) {
-        priority = project;
-        priorityScore = score;
-      }
-    }
-    priority ??= active.first;
-
-    final result = _feasibilityService.evaluate(
-      project: priority,
+    final priority = _selectPriorityProject(
+      active,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
     );
-    final scenarios = _scenarioService.generate(
+
+    final health = _healthService.evaluate(
       project: priority,
       currentFreeCashCents: currentFreeCashCents,
+      totalIncomeCents: totalIncomeCents,
       activeCredits: activeCredits,
     );
-    final recommended = _scenarioService.recommend(scenarios);
-    final color = feasibilityLevelColor(result.level);
+    final feasibilityColor = feasibilityLevelColor(health.feasibility.level);
+    final safetyColor = financialSafetyLevelColor(health.safety.level);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
       margin: EdgeInsets.zero,
-      color: Color.alphaBlend(color.withValues(alpha: 0.08), colorScheme.surfaceContainerHigh),
+      color: Color.alphaBlend(feasibilityColor.withValues(alpha: 0.08), colorScheme.surfaceContainerHigh),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadii.lg),
         onTap: () =>
-            Navigator.of(context).push(AppPageRoute(builder: (_) => ProjectDetailPage(projectId: priority!.id))),
+            Navigator.of(context).push(AppPageRoute(builder: (_) => ProjectDetailPage(projectId: priority.id))),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
@@ -94,18 +82,21 @@ class ProjectPriorityCard extends ConsumerWidget {
               const SizedBox(height: AppSpacing.xs),
               Row(
                 children: [
-                  Text('${result.totalScore}%',
-                      style:
-                          Theme.of(context).textTheme.titleMedium?.copyWith(color: color, fontWeight: FontWeight.w700)),
-                  const SizedBox(width: AppSpacing.xs),
-                  Text('— ${feasibilityLevelEmoji(result.level)} ${feasibilityLevelLabel(result.level)}',
-                      style: Theme.of(context).textTheme.bodyMedium),
+                  Text('Faisabilité ${health.feasibility.totalScore}%',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: feasibilityColor, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: AppSpacing.md),
+                  Text('Sécurité ${health.safety.totalScore}%',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodyMedium
+                          ?.copyWith(color: safetyColor, fontWeight: FontWeight.w700)),
                 ],
               ),
-              if (recommended != null) ...[
-                const SizedBox(height: AppSpacing.sm),
-                Text(recommended.description, style: Theme.of(context).textTheme.bodySmall),
-              ],
+              const SizedBox(height: AppSpacing.sm),
+              Text(health.conclusion, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: AppSpacing.md),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -119,7 +110,7 @@ class ProjectPriorityCard extends ConsumerWidget {
                     const SizedBox.shrink(),
                   TextButton(
                     onPressed: () => Navigator.of(context)
-                        .push(AppPageRoute(builder: (_) => ProjectDetailPage(projectId: priority!.id))),
+                        .push(AppPageRoute(builder: (_) => ProjectDetailPage(projectId: priority.id))),
                     child: const Text('Voir le projet'),
                   ),
                 ],
@@ -129,6 +120,46 @@ class ProjectPriorityCard extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Choix du projet mis en avant sur la Home (V1.1, §1) : d'abord la
+  /// priorité utilisateur (Haute > Moyenne > Basse), puis la faisabilité
+  /// (le plus avancé d'abord, en cas d'égalité de priorité), puis la date
+  /// cible la plus proche. Jamais limité à un seul projet dans
+  /// l'application : c'est uniquement la mise en avant sur la Home qui
+  /// n'en choisit qu'un.
+  ProjectEntity _selectPriorityProject(
+    List<ProjectEntity> active, {
+    required int currentFreeCashCents,
+    required int totalIncomeCents,
+    required List<CreditEntity> activeCredits,
+  }) {
+    int feasibilityOf(ProjectEntity project) => _healthService
+        .evaluate(
+          project: project,
+          currentFreeCashCents: currentFreeCashCents,
+          totalIncomeCents: totalIncomeCents,
+          activeCredits: activeCredits,
+        )
+        .feasibility
+        .totalScore;
+
+    final sorted = [...active]..sort((a, b) {
+        final byPriority = ProjectPriority.rank(a.priority).compareTo(ProjectPriority.rank(b.priority));
+        if (byPriority != 0) return byPriority;
+
+        final byFeasibility = feasibilityOf(b).compareTo(feasibilityOf(a));
+        if (byFeasibility != 0) return byFeasibility;
+
+        final dateA = a.desiredDate;
+        final dateB = b.desiredDate;
+        if (dateA == null && dateB == null) return 0;
+        if (dateA == null) return 1;
+        if (dateB == null) return -1;
+        return dateA.compareTo(dateB);
+      });
+
+    return sorted.first;
   }
 }
 

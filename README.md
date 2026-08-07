@@ -87,6 +87,17 @@ depuis Paramètres).
   route calculée uniquement à partir d'événements financiers réels et connus ; fiche projet,
   liste avec archivage, formulaire de création/modification ; voir la section dédiée
   "Project Feasibility Score" ci-dessous pour le détail de la formule)
+- Phase 11 (V1.1) — Safe Projects : ✅ (multi-projets — plusieurs projets actifs en parallèle,
+  chacun indépendant, avec priorité utilisateur Haute/Moyenne/Basse, duplication ; le Project
+  Planner répond désormais aussi à "Est-ce que ce projet reste sain pour mon budget ?", pas
+  seulement "est-ce mathématiquement faisable" — nouveau **Financial Safety Score** distinct
+  du score de faisabilité : reste à vivre avant/après, taux d'endettement avant/après avec
+  repères BudgetPilot internes [jamais une décision bancaire], marge consommée par le projet ;
+  les deux scores restent toujours affichés côte à côte, jamais masqués par un résumé global ;
+  le chemin recommandé privilégie désormais la sécurité financière — jamais le scénario au
+  score de faisabilité le plus élevé s'il resterait dangereux pour le budget ; bloqueurs
+  enrichis et classés par importance [1 à 3 maximum] ; voir la section dédiée "Financial
+  Safety Score" ci-dessous pour le détail de la formule)
 - Statistiques avancées, synchronisation bancaire : à venir
 
 ## Project Planner — Project Feasibility Score (V1.0)
@@ -173,3 +184,96 @@ précision est affichée sur chaque fiche projet :
 - La projection de croissance de l'apport dans le temps (§11) n'est activée que si une
   capacité d'épargne régulière fiable est fournie au moteur — BudgetPilot n'invente jamais
   cette capacité si elle n'est pas connue avec certitude.
+
+## Project Planner — Financial Safety Score (V1.1)
+
+Le score de faisabilité (V1.0) répond à "est-ce mathématiquement possible ?". Il ne répond
+pas à une question tout aussi essentielle : *"est-ce que ce projet reste sain pour mon
+budget ?"*. La V1.1 — **Safe Projects** — ajoute un second score, indépendant, qui répond à
+celle-là : le **Financial Safety Score**
+(`ProjectSafetyService`, dans `lib/domain/calculations/project_safety_service.dart`).
+
+Les deux scores sont **toujours affichés côte à côte** — fiche projet, liste des projets,
+carte "Projet prioritaire" de l'accueil, simulateur — jamais l'un sans l'autre, et jamais
+remplacés silencieusement par un résumé unique. Un score de faisabilité élevé ne garantit
+jamais un bon score de sécurité : un projet peut être finançable tout en fragilisant
+fortement le budget.
+
+### Formule du Financial Safety Score
+
+Trois critères, chacun sur 0-100, combinés en une moyenne pondérée (constantes
+`kSafetyWeight*`, documentées dans le code) :
+
+| Critère | Pondération | Ce qu'il mesure |
+|---|---|---|
+| Taux d'endettement après projet | 0.40 | Mensualités de crédits actifs + mensualité de financement du projet, rapportées au revenu |
+| Reste à vivre relatif au revenu | 0.35 | Part du revenu consommée par l'impact mensuel du projet (mensualité + coûts supplémentaires) — jamais un montant fixe seul (§5) |
+| Baisse relative du reste à vivre | 0.25 | Écart entre le reste à vivre avant et après le projet, rapporté au reste à vivre actuel |
+
+Niveaux affichés (mêmes couleurs que le reste de l'application — vert/jaune/orange/rouge) :
+
+| Score | Niveau |
+|---|---|
+| 0–39 | 🔴 Risque élevé |
+| 40–59 | 🟠 Tendue |
+| 60–79 | 🟡 Acceptable |
+| 80–100 | 🟢 Saine |
+
+### Reste à vivre — jamais recalculé indépendamment
+
+`ProjectSafetyService` réutilise l'argent libre déjà calculé par
+`BudgetCalculationService`/`DashboardViewBuilder` comme "reste à vivre actuel" — il ne le
+recalcule jamais. Le "reste à vivre après projet" est simplement ce montant moins l'impact
+mensuel du projet.
+
+### Taux d'endettement — repères internes, jamais une décision bancaire
+
+Le taux d'endettement (mensualités de crédits actifs + mensualité de financement du projet,
+divisées par le revenu mensuel) est comparé à des repères **internes à BudgetPilot**,
+centralisés dans le code (`kDebtRatioComfortable` = 30 %, `kDebtRatioWatch` = 35 %,
+`kDebtRatioTense` = 40 %) :
+
+| Taux | Lecture BudgetPilot |
+|---|---|
+| ≤ 30 % | 🟢 Confortable |
+| ≤ 35 % | 🟡 À surveiller |
+| ≤ 40 % | 🟠 Tendu |
+| > 40 % | 🔴 Risque élevé |
+
+**Ces seuils ne sont jamais présentés comme une règle d'acceptation bancaire ou une capacité
+d'emprunt officielle** — chaque affichage du taux d'endettement le rappelle explicitement.
+Les coûts mensuels supplémentaires du projet (assurance, entretien…) ne sont **jamais**
+comptés dans le taux d'endettement : ce ne sont pas des dettes, ils pèsent uniquement sur le
+reste à vivre.
+
+### Jamais de double comptage Charge/Crédit
+
+Une mensualité de crédit n'est jamais comptée deux fois. L'argent libre transmis au moteur
+est déjà net des mensualités de crédit (elles apparaissent une seule fois, comme charge fixe
+liée). Le taux d'endettement réutilise ces mêmes mensualités depuis le Crédit Manager, mais
+dans un calcul séparé (rapportées au revenu, pas soustraites du reste à vivre une deuxième
+fois) — testé explicitement (`test/domain/project_safety_service_test.dart`).
+
+### Le chemin recommandé privilégie la sécurité
+
+Depuis la V1.1, chaque scénario (`ProjectScenarioService`) recalcule aussi sa sécurité
+financière, son taux d'endettement et son reste à vivre — pas seulement sa faisabilité. Le
+chemin recommandé exclut désormais les scénarios dont la sécurité financière resterait faible
+(`kMinRecommendedSafetyScore` = 60), même si l'un d'eux atteint un score de faisabilité plus
+élevé : un projet n'est jamais recommandé uniquement parce qu'il "passe" mathématiquement.
+
+### Multi-projets et priorité
+
+Depuis la V1.1, BudgetPilot n'a plus jamais un seul projet à la fois : la page Projets
+affiche tous les projets actifs, chacun indépendant (CRUD complet, archivage, duplication).
+Chaque projet a une priorité utilisateur (Haute / Moyenne / Basse). Le projet mis en avant
+sur l'accueil ("Projet prioritaire") est choisi dans cet ordre : priorité utilisateur, puis
+faisabilité, puis date cible la plus proche — jamais un choix arbitraire, et jamais une
+limitation à un seul projet dans l'application elle-même (uniquement sur la mise en avant de
+l'accueil).
+
+### Ce que le score n'est pas
+
+Comme le score de faisabilité, le Financial Safety Score est une estimation interne à
+BudgetPilot — jamais une décision bancaire, une capacité d'emprunt officielle ni un conseil
+financier réglementé.

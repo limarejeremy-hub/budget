@@ -199,6 +199,10 @@ class Projects extends Table {
   IntColumn get extraMonthlyCostCents => integer().nullable()();
   TextColumn get notes => text().nullable()();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+
+  /// Priorité utilisateur (V1.1 — Safe Projects) : `haute` / `moyenne` /
+  /// `basse` — voir [ProjectPriority].
+  TextColumn get priority => text().withDefault(const Constant('moyenne'))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 }
@@ -223,7 +227,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -261,10 +265,21 @@ class AppDatabase extends _$AppDatabase {
             // ne doit jamais ressaisir ses crédits.
             await reconcileCreditLinkedCharges(this);
           }
-          if (from < 6) {
+          // `createTable` matérialise la table `projects` telle que définie
+          // par la classe Dart *actuelle* — donc déjà avec la colonne
+          // `priority` si la table n'existait pas encore. L'`addColumn` de la
+          // branche v6/v7 ne doit s'appliquer qu'aux bases où `projects`
+          // existait déjà.
+          final createdProjectsTable = from < 6;
+          if (createdProjectsTable) {
             // V1.0 — Project Planner : nouvelle table uniquement, aucune
             // donnée existante touchée.
             await m.createTable(projects);
+          }
+          if (from < 7 && !createdProjectsTable) {
+            // V1.1 — Safe Projects : priorité utilisateur, additive, valeur
+            // par défaut "moyenne" pour tous les projets déjà enregistrés.
+            await m.addColumn(projects, projects.priority);
           }
         },
       );

@@ -64,6 +64,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Auto', monthlyPaymentCents: 28000, remainingInstallments: 11)],
         now: now,
       );
@@ -75,10 +76,28 @@ void main() {
       expect(wait.first.newScore, greaterThan(wait.first.baselineScore));
     });
 
+    test('un crédit qui se termine améliore aussi le score de sécurité, pas seulement la faisabilité', () {
+      // Projet modeste (mensualité significative face à l'argent libre
+      // actuel, mais pas déjà hors de portée) : la fin du crédit "Auto"
+      // libère assez de marge pour faire bouger la sécurité, sans que les
+      // deux scores soient déjà saturés au plancher ou au plafond.
+      final scenarios = service.generate(
+        project: _project(targetAmountCents: 600000, availableContributionCents: 200000, desiredDurationMonths: 36),
+        currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
+        activeCredits: [_credit(id: 1, name: 'Auto', monthlyPaymentCents: 28000, remainingInstallments: 11)],
+        now: now,
+      );
+
+      final wait = scenarios.firstWhere((s) => s.type == ProjectScenarioType.waitForCredit);
+      expect(wait.newSafetyScore, greaterThan(wait.baselineSafetyScore));
+    });
+
     test('aucun scénario "attendre un crédit" sans crédit actif', () {
       final scenarios = service.generate(
         project: _project(),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: const [],
         now: now,
       );
@@ -90,6 +109,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Lointain', remainingInstallments: 200)],
         now: now,
       );
@@ -101,6 +121,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(targetAmountCents: 4000000, availableContributionCents: 800000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: const [],
         now: now,
       );
@@ -115,6 +136,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(targetAmountCents: 500000, availableContributionCents: 500000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: const [],
         now: now,
       );
@@ -126,12 +148,14 @@ void main() {
       final withEnoughContribution = service.generate(
         project: _project(availableContributionCents: 100000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Petit crédit', remainingCapitalCents: 80000, monthlyPaymentCents: 15000)],
         now: now,
       );
       final withoutEnoughContribution = service.generate(
         project: _project(availableContributionCents: 10000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Petit crédit', remainingCapitalCents: 80000, monthlyPaymentCents: 15000)],
         now: now,
       );
@@ -144,6 +168,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(availableContributionCents: 100000, targetAmountCents: 4000000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Petit crédit', remainingCapitalCents: 80000, monthlyPaymentCents: 15000)],
         now: now,
       );
@@ -157,6 +182,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(desiredDate: DateTime(2027, 1, 1)),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: const [],
         now: now,
       );
@@ -169,6 +195,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(desiredDate: null),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: const [],
         now: now,
       );
@@ -180,6 +207,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(targetAmountCents: 4000000, availableContributionCents: 800000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Auto', monthlyPaymentCents: 28000, remainingInstallments: 11)],
         now: now,
       );
@@ -199,6 +227,7 @@ void main() {
       final scenarios = service.generate(
         project: _project(targetAmountCents: 4000000, availableContributionCents: 800000),
         currentFreeCashCents: 40000,
+        totalIncomeCents: 300000,
         activeCredits: [_credit(id: 1, name: 'Auto', monthlyPaymentCents: 28000, remainingInstallments: 11)],
         now: now,
       );
@@ -210,6 +239,62 @@ void main() {
 
     test('renvoie null pour une liste vide', () {
       expect(service.recommend(const []), isNull);
+    });
+
+    test(
+        'privilégie la sécurité : un scénario plus sûr est préféré à un scénario plus faisable mais peu sûr '
+        '(V1.1, §9)', () {
+      const risky = ProjectScenario(
+        type: ProjectScenarioType.increaseContribution,
+        label: 'Scénario A (faisabilité max, sécurité faible)',
+        description: '',
+        cashRequiredCents: 100000,
+        newFinancingNeededCents: 0,
+        newScore: 90,
+        baselineScore: 60,
+        newSafetyScore: 42,
+        baselineSafetyScore: 55,
+        newDebtRatioAfter: 0.45,
+        newRemainingAfterCents: 30000,
+      );
+      const safer = ProjectScenario(
+        type: ProjectScenarioType.waitForCredit,
+        label: 'Scénario B (faisabilité correcte, sécurité saine)',
+        description: '',
+        horizonMonths: 6,
+        newFinancingNeededCents: 0,
+        newScore: 83,
+        baselineScore: 60,
+        newSafetyScore: 88,
+        baselineSafetyScore: 55,
+        newDebtRatioAfter: 0.25,
+        newRemainingAfterCents: 180000,
+      );
+
+      final recommended = service.recommend([risky, safer]);
+
+      expect(recommended, safer);
+    });
+
+    test(
+        'si aucun scénario n\'atteint la sécurité minimale, recommande quand même le meilleur compromis '
+        'disponible plutôt que de n\'en proposer aucun', () {
+      const onlyRisky = ProjectScenario(
+        type: ProjectScenarioType.increaseContribution,
+        label: 'Seul scénario disponible',
+        description: '',
+        newFinancingNeededCents: 0,
+        newScore: 70,
+        baselineScore: 50,
+        newSafetyScore: 30,
+        baselineSafetyScore: 20,
+        newDebtRatioAfter: 0.5,
+        newRemainingAfterCents: 10000,
+      );
+
+      final recommended = service.recommend([onlyRisky]);
+
+      expect(recommended, onlyRisky);
     });
   });
 

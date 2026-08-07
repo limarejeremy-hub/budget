@@ -841,6 +841,7 @@ class CycleRepository {
     double? estimatedRatePercent,
     int? extraMonthlyCostCents,
     String? notes,
+    String priority = ProjectPriority.medium,
   }) {
     return db.into(db.projects).insert(ProjectsCompanion.insert(
           name: name,
@@ -855,6 +856,7 @@ class CycleRepository {
           estimatedRatePercent: Value(estimatedRatePercent),
           extraMonthlyCostCents: Value(extraMonthlyCostCents),
           notes: Value(notes),
+          priority: Value(priority),
         ));
   }
 
@@ -872,6 +874,7 @@ class CycleRepository {
     double? estimatedRatePercent,
     int? extraMonthlyCostCents,
     String? notes,
+    String priority = ProjectPriority.medium,
   }) {
     return (db.update(db.projects)..where((t) => t.id.equals(id))).write(ProjectsCompanion(
       name: Value(name),
@@ -886,6 +889,7 @@ class CycleRepository {
       estimatedRatePercent: Value(estimatedRatePercent),
       extraMonthlyCostCents: Value(extraMonthlyCostCents),
       notes: Value(notes),
+      priority: Value(priority),
       updatedAt: Value(DateTime.now()),
     ));
   }
@@ -900,6 +904,27 @@ class CycleRepository {
   }
 
   Future<void> deleteProject(int id) => (db.delete(db.projects)..where((t) => t.id.equals(id))).go();
+
+  /// Duplique un projet (V1.1, §1) : même saisie, nouveau projet
+  /// indépendant, toujours actif — jamais un simple lien vers l'original.
+  Future<int> duplicateProject(int id) async {
+    final original = await (db.select(db.projects)..where((t) => t.id.equals(id))).getSingle();
+    return db.into(db.projects).insert(ProjectsCompanion.insert(
+          name: '${original.name} (copie)',
+          category: original.category,
+          targetAmountCents: original.targetAmountCents,
+          desiredDate: Value(original.desiredDate),
+          availableContributionCents: Value(original.availableContributionCents),
+          desiredContributionCents: Value(original.desiredContributionCents),
+          financingMode: original.financingMode,
+          maxMonthlyPaymentCents: Value(original.maxMonthlyPaymentCents),
+          desiredDurationMonths: Value(original.desiredDurationMonths),
+          estimatedRatePercent: Value(original.estimatedRatePercent),
+          extraMonthlyCostCents: Value(original.extraMonthlyCostCents),
+          notes: Value(original.notes),
+          priority: Value(original.priority),
+        ));
+  }
 
   Future<List<Project>> loadProjects() =>
       (db.select(db.projects)..orderBy([(p) => OrderingTerm.desc(p.createdAt)])).get();

@@ -30,6 +30,7 @@ void main() {
       estimatedRatePercent: 4.5,
       extraMonthlyCostCents: 10000,
       notes: 'Rêve de toujours',
+      priority: ProjectPriority.high,
     );
 
     final project = (await repository.loadProjects()).single;
@@ -47,9 +48,10 @@ void main() {
     expect(project.extraMonthlyCostCents, 10000);
     expect(project.notes, 'Rêve de toujours');
     expect(project.isActive, isTrue);
+    expect(project.priority, ProjectPriority.high);
   });
 
-  test('createProject sans champs facultatifs les laisse à null', () async {
+  test('createProject sans champs facultatifs les laisse à null, priorité "moyenne" par défaut', () async {
     await repository.createProject(
       name: 'Voyage',
       category: ProjectCategory.travel,
@@ -65,6 +67,7 @@ void main() {
     expect(project.estimatedRatePercent, isNull);
     expect(project.extraMonthlyCostCents, isNull);
     expect(project.availableContributionCents, 0);
+    expect(project.priority, ProjectPriority.medium);
   });
 
   test('updateProject modifie un projet existant', () async {
@@ -82,12 +85,14 @@ void main() {
       targetAmountCents: 700000,
       availableContributionCents: 200000,
       financingMode: ProjectFinancingMode.cash,
+      priority: ProjectPriority.low,
     );
 
     final project = (await repository.loadProjects()).single;
     expect(project.name, 'Voyage au Japon');
     expect(project.targetAmountCents, 700000);
     expect(project.availableContributionCents, 200000);
+    expect(project.priority, ProjectPriority.low);
   });
 
   test('setProjectActive archive puis réactive un projet, sans le supprimer', () async {
@@ -105,6 +110,30 @@ void main() {
     await repository.setProjectActive(id, true);
     project = (await repository.loadProjects()).single;
     expect(project.isActive, isTrue);
+  });
+
+  test('duplicateProject crée une copie indépendante, toujours active', () async {
+    final id = await repository.createProject(
+      name: 'Porsche Boxster',
+      category: ProjectCategory.car,
+      targetAmountCents: 4000000,
+      availableContributionCents: 800000,
+      financingMode: ProjectFinancingMode.mixed,
+      priority: ProjectPriority.high,
+    );
+    await repository.setProjectActive(id, false);
+
+    final duplicateId = await repository.duplicateProject(id);
+
+    expect(duplicateId, isNot(id));
+    final projects = await repository.loadProjects();
+    expect(projects, hasLength(2));
+    final duplicate = projects.firstWhere((p) => p.id == duplicateId);
+    expect(duplicate.name, 'Porsche Boxster (copie)');
+    expect(duplicate.targetAmountCents, 4000000);
+    expect(duplicate.availableContributionCents, 800000);
+    expect(duplicate.priority, ProjectPriority.high);
+    expect(duplicate.isActive, isTrue, reason: 'une copie démarre toujours active, indépendamment de l\'original');
   });
 
   test('deleteProject supprime définitivement le projet', () async {

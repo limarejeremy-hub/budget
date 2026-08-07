@@ -72,7 +72,9 @@ fichier, sur l'appareil. C'est pourquoi la fonction de sauvegarde manuelle
   correspondant (voir « Fusion Charges/Crédits (V0.9) » ci-dessous), et
   qu'une base simulant le schéma v5 (avant la table `Projects`) migre vers
   v6 sans perdre aucun crédit ni aucune charge existants (voir « Project
-  Planner (V1.0) » ci-dessous).
+  Planner (V1.0) » ci-dessous), et qu'une base simulant le schéma v6 (avant
+  la priorité des projets) migre vers v7 sans perdre aucun projet existant
+  (voir « Safe Projects (V1.1) » ci-dessous).
 
 ### Fusion Charges/Crédits (V0.9)
 
@@ -115,6 +117,17 @@ jamais dupliquer ni exiger de double saisie.
 - Ce module est indépendant de l'export/import de sauvegarde existant :
   aucune modification n'a été apportée au format de sauvegarde pour cette
   version.
+
+## Safe Projects (V1.1)
+
+- **Schéma v6 → v7** (`AppDatabase.schemaVersion = 7`) ajoute, de façon
+  strictement additive, la colonne `Projects.priority` (valeur par défaut
+  `"moyenne"`) — aucune autre colonne ni table n'est touchée.
+- Les projets déjà enregistrés reçoivent automatiquement la priorité
+  `"moyenne"` à la migration — jamais une valeur inventée ou aléatoire.
+- Comme le score de faisabilité, le Financial Safety Score (reste à vivre,
+  taux d'endettement) n'est **jamais persisté** : toujours recalculé à la
+  volée à partir des données réelles courantes.
 
 ## Historique des notifications (V0.9)
 
