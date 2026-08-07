@@ -46,3 +46,36 @@ class EntityType {
   static const String variableExpense = 'variable_expense';
   static const String saving = 'saving';
 }
+
+/// Catégories possibles pour un projet (V1.0 — Project Planner).
+class ProjectCategory {
+  ProjectCategory._();
+  static const String car = 'voiture';
+  static const String renovation = 'travaux';
+  static const String realEstate = 'immobilier';
+  static const String travel = 'voyage';
+  static const String wedding = 'mariage';
+  static const String bigPurchase = 'gros_achat';
+  static const String other = 'autre';
+
+  static const List<String> all = [
+    car,
+    renovation,
+    realEstate,
+    travel,
+    wedding,
+    bigPurchase,
+    other,
+  ];
+}
+
+/// Mode de financement envisagé pour un projet.
+class ProjectFinancingMode {
+  ProjectFinancingMode._();
+  static const String cash = 'comptant';
+  static const String financed = 'financement';
+  static const String mixed = 'mixte';
+  static const String undetermined = 'indetermine';
+
+  static const List<String> all = [cash, financed, mixed, undetermined];
+}

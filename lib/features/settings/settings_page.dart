@@ -103,8 +103,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     setState(() => _backupBusy = true);
     try {
-      final count =
-          await repository.importBackup(decoded! as Map<String, dynamic>, replaceExisting: replace);
+      final count = await repository.importBackup(decoded! as Map<String, dynamic>, replaceExisting: replace);
       if (mounted) {
         _showSnackBar(
             '$count cycle${count > 1 ? 's' : ''} importé${count > 1 ? 's' : ''} (${replace ? 'remplacement' : 'fusion'})');
@@ -196,18 +195,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: SegmentedButton<ThemeMode>(
                 segments: const [
                   ButtonSegment(
-                      value: ThemeMode.system,
-                      icon: Icon(Icons.brightness_auto_outlined),
-                      label: Text('Système')),
-                  ButtonSegment(
-                      value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Clair')),
-                  ButtonSegment(
-                      value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Sombre')),
+                      value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('Système')),
+                  ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Clair')),
+                  ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Sombre')),
                 ],
                 selected: {themeMode},
-                onSelectionChanged: (selection) => ref
-                    .read(cycleRepositoryProvider)
-                    .setThemeMode(themeModeToString(selection.first)),
+                onSelectionChanged: (selection) =>
+                    ref.read(cycleRepositoryProvider).setThemeMode(themeModeToString(selection.first)),
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -238,7 +232,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 0.9.0'),
+              subtitle: const Text('Version 1.0.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[

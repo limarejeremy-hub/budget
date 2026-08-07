@@ -27,6 +27,7 @@ import '../cycle/cycle_detail_page.dart';
 import '../entries/incomes_list_page.dart';
 import '../entries/savings_list_page.dart';
 import '../expenses/variable_expenses_page.dart';
+import '../projects/widgets/project_priority_card.dart';
 import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
 import 'widgets/cycle_progress_bar.dart';
@@ -67,8 +68,7 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.savings_outlined, size: 48, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
-            Text('Aucun cycle en cours',
-                style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+            Text('Aucun cycle en cours', style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
               'Créez votre premier cycle budgétaire pour commencer à saisir vos revenus, '
@@ -129,12 +129,10 @@ class _DashboardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontalPadding =
-            math.max(AppSpacing.xl, (constraints.maxWidth - _maxContentWidth) / 2);
+        final horizontalPadding = math.max(AppSpacing.xl, (constraints.maxWidth - _maxContentWidth) / 2);
 
         return ListView(
-          padding: EdgeInsets.fromLTRB(
-              horizontalPadding, AppSpacing.lg, horizontalPadding, 100),
+          padding: EdgeInsets.fromLTRB(horizontalPadding, AppSpacing.lg, horizontalPadding, 100),
           children: [
             _DashboardHeader(cycleId: data.cycleId),
             const SizedBox(height: AppSpacing.xxl),
@@ -153,6 +151,8 @@ class _DashboardContent extends StatelessWidget {
             const CreditsSummaryCard(),
             const SizedBox(height: AppSpacing.lg),
             const CreditAdviceCard(),
+            const SizedBox(height: AppSpacing.lg),
+            const ProjectPriorityCard(),
             const SizedBox(height: AppSpacing.xxl),
             _UpcomingChargesSection(data: data),
             if (data.declaredBankBalanceCents != null) ...[
@@ -245,8 +245,7 @@ class _ArgentLibreCard extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
           child: Stack(
             children: [
               // Texture métal brossé : fines rayures diagonales à très
@@ -314,8 +313,7 @@ class _ArgentLibreCard extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
                     decoration: BoxDecoration(
                       color: statusColor.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -338,10 +336,7 @@ class _ArgentLibreCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     "Disponible jusqu'au ${formatDayMonthFr(data.cycleEnd)}",
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: accent.withValues(alpha: 0.85)),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: accent.withValues(alpha: 0.85)),
                   ),
                 ],
               ),
@@ -391,8 +386,7 @@ class _BrushedMetalPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _BrushedMetalPainter oldDelegate) =>
-      oldDelegate.brightness != brightness;
+  bool shouldRepaint(covariant _BrushedMetalPainter oldDelegate) => oldDelegate.brightness != brightness;
 }
 
 /// "1 revenu" / "3 prélèvements" — jamais de pourcentage sous les cartes du
@@ -507,8 +501,7 @@ class _SummaryTile extends StatelessWidget {
             Container(
               width: 34,
               height: 34,
-              decoration:
-                  BoxDecoration(color: item.color.withValues(alpha: 0.2), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: item.color.withValues(alpha: 0.2), shape: BoxShape.circle),
               child: Icon(item.icon, color: item.color, size: 17),
             ),
             const SizedBox(width: AppSpacing.sm),
@@ -578,10 +571,7 @@ class _UpcomingChargesSection extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Aucune échéance à venir',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ),
                 ],
@@ -638,10 +628,7 @@ class _UpcomingChargeCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(formatDayMonthFr(charge.expectedDate),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
                       const SizedBox(width: AppSpacing.xs),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -650,8 +637,10 @@ class _UpcomingChargeCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(AppRadii.sm),
                         ),
                         child: Text(presentation.label,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: presentation.color, fontWeight: FontWeight.w600)),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: presentation.color, fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),

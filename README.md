@@ -75,4 +75,101 @@ depuis Paramètres).
   d'opérations en attente sur la carte "Aujourd'hui" et centre de notifications dédié avec
   historique persistant ; chaque nouveau cycle régénère automatiquement les charges de tous
   les crédits actifs, sans aucune ressaisie)
+- Phase 10 (V1.0) — Project Planner : ✅ (nouveau module "Projets" — voiture, travaux,
+  immobilier, voyage, mariage, gros achat, autre —, accessible depuis une carte dédiée sur
+  l'accueil qui devient automatiquement "Projet prioritaire" dès qu'un projet actif existe ;
+  moteur de faisabilité déterministe et testé indépendamment de l'UI [`ProjectFeasibilityService`]
+  qui répond à "Puis-je réellement réaliser ce projet ?" avec un score sur 100 multi-critères —
+  jamais un simple `apport / prix` — et identifie explicitement ce qui bloque, ce qui va
+  s'améliorer [crédits actifs proches de leur fin], le chemin recommandé et des scénarios
+  alternatifs [`ProjectScenarioService`] ; simulateur interactif qui ne modifie jamais les
+  vraies données tant que l'utilisateur ne choisit pas explicitement d'enregistrer ; feuille de
+  route calculée uniquement à partir d'événements financiers réels et connus ; fiche projet,
+  liste avec archivage, formulaire de création/modification ; voir la section dédiée
+  "Project Feasibility Score" ci-dessous pour le détail de la formule)
 - Statistiques avancées, synchronisation bancaire : à venir
+
+## Project Planner — Project Feasibility Score (V1.0)
+
+Le module **Projets** répond à une question que BudgetPilot ne posait pas encore :
+*"Puis-je réellement réaliser ce projet ?"* — pas seulement "combien ai-je économisé pour
+lui". Il réutilise entièrement les données déjà suivies par l'application (argent libre,
+revenus, charges fixes, crédits actifs, mensualités, dates de fin, capital restant) : le
+Project Planner n'a pas sa propre source de vérité financière, il l'exploite.
+
+### Le score n'est pas `apport / prix`
+
+Le Project Feasibility Score (`ProjectFeasibilityService.evaluate`, dans
+`lib/domain/calculations/project_feasibility_service.dart`) combine six facteurs
+indépendants, chacun noté sur 100 puis pondéré :
+
+| Facteur | Pondération | Ce qu'il mesure |
+|---|---|---|
+| A — Capacité mensuelle | 0.25 | Impact mensuel du projet (mensualité + coûts supplémentaires) rapporté à l'argent libre actuel |
+| B — Marge de sécurité | 0.20 | Ce qu'il reste après le projet, comparé à la marge de sécurité cible (§ ci-dessous) |
+| C — Apport / besoin de financement | 0.20 | Part du prix déjà couverte par l'apport disponible |
+| D — Pression des crédits actuels | 0.15 | Poids des mensualités de crédits déjà en cours par rapport à l'argent libre |
+| E — Évolution future connue | 0.10 | Capacité que les crédits en cours vont libérer à leur échéance |
+| F — Horizon du projet | 0.10 | Compatibilité entre la date souhaitée (si renseignée) et le moment où le projet deviendrait réaliste |
+
+Le score final est la moyenne pondérée de ces six facteurs, arrondie et bornée à
+`[0, 100]`. Les pondérations sont des constantes documentées
+(`kWeightCapacity`, `kWeightSafetyMargin`, …) — jamais dispersées dans le calcul.
+
+Niveaux affichés :
+
+| Score | Niveau |
+|---|---|
+| 0–39 | 🔴 Très difficile actuellement |
+| 40–59 | 🟠 Fragile |
+| 60–74 | 🟡 Envisageable |
+| 75–89 | 🟢 Réalisable |
+| 90–100 | 🟢 Très confortable |
+
+### Marge de sécurité
+
+BudgetPilot ne considère jamais que 100 % de l'argent libre peut être consommé par un
+projet. La marge de sécurité cible est `kSafetyMarginRatio` (20 %) de l'argent libre actuel
+— un ratio, pas un seuil fixe caché — et influence directement le facteur B.
+
+### Hypothèses de financement — jamais silencieuses
+
+Quand un projet nécessite un financement (`prix cible − apport = besoin de financement`),
+la mensualité est estimée :
+
+- avec la formule d'amortissement classique si un taux est renseigné ;
+- sinon avec une estimation simplifiée `capital / durée` (linéaire, sans intérêts) —
+  signalée explicitement (`isRateEstimated`) partout où elle est affichée ;
+- si ni durée ni mensualité maximale ne sont connues, une durée par défaut de 60 mois est
+  utilisée et signalée (`isDurationEstimated`).
+
+### Ce qui va s'améliorer, chemin recommandé, feuille de route
+
+Le moteur détecte les crédits actifs qui se termineront prochainement et recalcule le score
+"après" leur fin. Le moteur de scénarios (`ProjectScenarioService`) explore ensuite plusieurs
+leviers réalistes — attendre la fin d'un crédit, augmenter l'apport, solder un petit crédit,
+réduire le montant du projet, étendre l'horizon — et propose un **chemin recommandé** qui
+n'est jamais simplement celui qui maximise le score : l'effort, le délai et l'argent mobilisé
+sont pris en compte. Solder un crédit n'est jamais recommandé automatiquement — le module
+affiche une comparaison réelle entre l'argent utilisé pour solder, la mensualité libérée et
+le gain sur le projet, et laisse la décision à l'utilisateur. La feuille de route n'affiche
+que des événements financiers réels et connus (fins de crédits) — jamais une projection
+inventée.
+
+### Ce que le score n'est pas
+
+Le score de faisabilité est une estimation interne à BudgetPilot, jamais une décision
+bancaire, une capacité d'emprunt officielle ou un conseil financier réglementé. Cette
+précision est affichée sur chaque fiche projet :
+
+> Estimation BudgetPilot basée sur les données enregistrées dans l'application.
+
+### Limites connues
+
+- Le simulateur interactif (§15) permet aujourd'hui de tester un autre apport ou un autre
+  prix cible sans jamais modifier les vraies données tant que l'enregistrement n'est pas
+  explicitement demandé ; il ne couvre pas encore l'ensemble des leviers de simulation
+  possibles (mensualité cible, durée, date, remboursement anticipé d'un crédit).
+- La projection de croissance de l'apport dans le temps (§11) n'est activée que si une
+  capacité d'épargne régulière fiable est fournie au moteur — BudgetPilot n'invente jamais
+  cette capacité si elle n'est pas connue avec certitude.

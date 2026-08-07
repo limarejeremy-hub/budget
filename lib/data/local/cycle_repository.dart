@@ -56,10 +56,8 @@ class CycleRepository {
     if (cycle == null) return null;
 
     final incomes = await (db.select(db.incomes)..where((i) => i.cycleId.equals(cycle.id))).get();
-    final fixedExpenses =
-        await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
-    final variableExpenses =
-        await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
+    final fixedExpenses = await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
+    final variableExpenses = await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
     final savings = await (db.select(db.savings)..where((s) => s.cycleId.equals(cycle.id))).get();
 
     return CycleDashboardRawData(
@@ -87,8 +85,7 @@ class CycleRepository {
 
   /// Tous les cycles (courant compris), du plus récent au plus ancien.
   Stream<List<BudgetCycle>> watchAllCycles() {
-    return (db.select(db.budgetCycles)..orderBy([(c) => OrderingTerm.desc(c.startDate)]))
-        .watch();
+    return (db.select(db.budgetCycles)..orderBy([(c) => OrderingTerm.desc(c.startDate)])).watch();
   }
 
   // ---------------------------------------------------------------------
@@ -110,8 +107,7 @@ class CycleRepository {
 
     await db.batch((batch) {
       batch.insertAll(db.categories, [
-        for (final (name, type, icon) in all)
-          CategoriesCompanion.insert(name: name, type: type, icon: Value(icon)),
+        for (final (name, type, icon) in all) CategoriesCompanion.insert(name: name, type: type, icon: Value(icon)),
       ]);
     });
   }
@@ -243,8 +239,7 @@ class CycleRepository {
     required bool isActive,
     int? linkedCreditId,
   }) {
-    return (db.update(db.fixedExpenses)..where((t) => t.id.equals(id)))
-        .write(FixedExpensesCompanion(
+    return (db.update(db.fixedExpenses)..where((t) => t.id.equals(id))).write(FixedExpensesCompanion(
       name: Value(name),
       expectedAmountCents: Value(expectedAmountCents),
       actualAmountCents: Value(actualAmountCents),
@@ -256,8 +251,7 @@ class CycleRepository {
     ));
   }
 
-  Future<void> deleteFixedExpense(int id) =>
-      (db.delete(db.fixedExpenses)..where((t) => t.id.equals(id))).go();
+  Future<void> deleteFixedExpense(int id) => (db.delete(db.fixedExpenses)..where((t) => t.id.equals(id))).go();
 
   /// Change manuellement le statut d'une charge fixe (ex : "prelevee",
   /// "suspendue", "incident"). Un statut manuel n'est jamais recalculé
@@ -294,8 +288,7 @@ class CycleRepository {
     required DateTime date,
     int? categoryId,
   }) {
-    return (db.update(db.variableExpenses)..where((t) => t.id.equals(id)))
-        .write(VariableExpensesCompanion(
+    return (db.update(db.variableExpenses)..where((t) => t.id.equals(id))).write(VariableExpensesCompanion(
       name: Value(name),
       amountCents: Value(amountCents),
       date: Value(date),
@@ -304,8 +297,7 @@ class CycleRepository {
     ));
   }
 
-  Future<void> deleteVariableExpense(int id) =>
-      (db.delete(db.variableExpenses)..where((t) => t.id.equals(id))).go();
+  Future<void> deleteVariableExpense(int id) => (db.delete(db.variableExpenses)..where((t) => t.id.equals(id))).go();
 
   // ---------------------------------------------------------------------
   // Épargnes
@@ -365,9 +357,7 @@ class CycleRepository {
   /// pour survivre aux redémarrages et aux mises à jour de l'app.
   Stream<String> watchThemeMode() async* {
     yield await _loadThemeMode();
-    yield* db
-        .tableUpdates(TableUpdateQuery.onAllTables([db.appSettingsTable]))
-        .asyncMap((_) => _loadThemeMode());
+    yield* db.tableUpdates(TableUpdateQuery.onAllTables([db.appSettingsTable])).asyncMap((_) => _loadThemeMode());
   }
 
   Future<void> setThemeMode(String mode) async {
@@ -823,14 +813,103 @@ class CycleRepository {
 
   Stream<List<NotificationLog>> watchNotificationLogs() async* {
     yield await loadNotificationLogs();
-    yield* db
-        .tableUpdates(TableUpdateQuery.onAllTables([db.notificationLogs]))
-        .asyncMap((_) => loadNotificationLogs());
+    yield* db.tableUpdates(TableUpdateQuery.onAllTables([db.notificationLogs])).asyncMap((_) => loadNotificationLogs());
   }
 
   Future<void> markNotificationRead(int id) {
     return (db.update(db.notificationLogs)..where((n) => n.id.equals(id)))
         .write(const NotificationLogsCompanion(read: Value(true)));
+  }
+
+  // ---------------------------------------------------------------------
+  // Projets (V1.0 — Project Planner) — indépendants des cycles budgétaires,
+  // comme les crédits. Seuls les INPUTS sont persistés ici ; le score de
+  // faisabilité et la trajectoire sont toujours recalculés à la volée par
+  // ProjectFeasibilityService, jamais stockés (évite toute donnée obsolète).
+  // ---------------------------------------------------------------------
+
+  Future<int> createProject({
+    required String name,
+    required String category,
+    required int targetAmountCents,
+    DateTime? desiredDate,
+    int availableContributionCents = 0,
+    int? desiredContributionCents,
+    required String financingMode,
+    int? maxMonthlyPaymentCents,
+    int? desiredDurationMonths,
+    double? estimatedRatePercent,
+    int? extraMonthlyCostCents,
+    String? notes,
+  }) {
+    return db.into(db.projects).insert(ProjectsCompanion.insert(
+          name: name,
+          category: category,
+          targetAmountCents: targetAmountCents,
+          desiredDate: Value(desiredDate),
+          availableContributionCents: Value(availableContributionCents),
+          desiredContributionCents: Value(desiredContributionCents),
+          financingMode: financingMode,
+          maxMonthlyPaymentCents: Value(maxMonthlyPaymentCents),
+          desiredDurationMonths: Value(desiredDurationMonths),
+          estimatedRatePercent: Value(estimatedRatePercent),
+          extraMonthlyCostCents: Value(extraMonthlyCostCents),
+          notes: Value(notes),
+        ));
+  }
+
+  Future<void> updateProject({
+    required int id,
+    required String name,
+    required String category,
+    required int targetAmountCents,
+    DateTime? desiredDate,
+    required int availableContributionCents,
+    int? desiredContributionCents,
+    required String financingMode,
+    int? maxMonthlyPaymentCents,
+    int? desiredDurationMonths,
+    double? estimatedRatePercent,
+    int? extraMonthlyCostCents,
+    String? notes,
+  }) {
+    return (db.update(db.projects)..where((t) => t.id.equals(id))).write(ProjectsCompanion(
+      name: Value(name),
+      category: Value(category),
+      targetAmountCents: Value(targetAmountCents),
+      desiredDate: Value(desiredDate),
+      availableContributionCents: Value(availableContributionCents),
+      desiredContributionCents: Value(desiredContributionCents),
+      financingMode: Value(financingMode),
+      maxMonthlyPaymentCents: Value(maxMonthlyPaymentCents),
+      desiredDurationMonths: Value(desiredDurationMonths),
+      estimatedRatePercent: Value(estimatedRatePercent),
+      extraMonthlyCostCents: Value(extraMonthlyCostCents),
+      notes: Value(notes),
+      updatedAt: Value(DateTime.now()),
+    ));
+  }
+
+  /// Archive (ou réactive) un projet — jamais supprimé par cette action,
+  /// contrairement à [deleteProject].
+  Future<void> setProjectActive(int id, bool isActive) {
+    return (db.update(db.projects)..where((t) => t.id.equals(id))).write(ProjectsCompanion(
+      isActive: Value(isActive),
+      updatedAt: Value(DateTime.now()),
+    ));
+  }
+
+  Future<void> deleteProject(int id) => (db.delete(db.projects)..where((t) => t.id.equals(id))).go();
+
+  Future<List<Project>> loadProjects() =>
+      (db.select(db.projects)..orderBy([(p) => OrderingTerm.desc(p.createdAt)])).get();
+
+  /// Basé sur `tableUpdates` (comme [watchCredits]) plutôt que sur le
+  /// `.watch()` natif d'une requête Drift — voir le commentaire de
+  /// [watchCredits] pour la raison (timer interne qui bloque les tests).
+  Stream<List<Project>> watchProjects() async* {
+    yield await loadProjects();
+    yield* db.tableUpdates(TableUpdateQuery.onAllTables([db.projects])).asyncMap((_) => loadProjects());
   }
 
   // ---------------------------------------------------------------------
@@ -849,10 +928,8 @@ class CycleRepository {
     final cycleMaps = <Map<String, dynamic>>[];
     for (final cycle in cycles) {
       final incomes = await (db.select(db.incomes)..where((i) => i.cycleId.equals(cycle.id))).get();
-      final fixedExpenses =
-          await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
-      final variableExpenses =
-          await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
+      final fixedExpenses = await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
+      final variableExpenses = await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
       final savings = await (db.select(db.savings)..where((s) => s.cycleId.equals(cycle.id))).get();
 
       cycleMaps.add({
@@ -950,8 +1027,7 @@ class CycleRepository {
   /// invalide, d'une version non prise en charge, ou incomplet.
   void validateBackup(Object? decoded) {
     if (decoded is! Map || decoded['cycles'] == null) {
-      throw const BackupValidationException(
-          "Ce fichier n'est pas une sauvegarde BudgetPilot valide.");
+      throw const BackupValidationException("Ce fichier n'est pas une sauvegarde BudgetPilot valide.");
     }
     final formatVersion = decoded['formatVersion'];
     if (formatVersion != backupFormatVersion) {
@@ -1067,8 +1143,7 @@ class CycleRepository {
               remainingCapitalCents: c['remainingCapitalCents'] as int,
               monthlyPaymentCents: c['monthlyPaymentCents'] as int,
               annualRatePercent: Value((c['annualRatePercent'] as num?)?.toDouble()),
-              startDate: Value(
-                  c['startDate'] == null ? null : DateTime.parse(c['startDate'] as String)),
+              startDate: Value(c['startDate'] == null ? null : DateTime.parse(c['startDate'] as String)),
               expectedEndDate: DateTime.parse(c['expectedEndDate'] as String),
               remainingInstallments: c['remainingInstallments'] as int,
               creditType: Value(c['creditType'] as String?),

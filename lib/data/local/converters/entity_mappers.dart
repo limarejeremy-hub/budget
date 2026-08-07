@@ -3,6 +3,7 @@ import '../../../domain/calculations/charge_status_service.dart';
 import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/fixed_expense_entity.dart';
 import '../../../domain/entities/income_entity.dart';
+import '../../../domain/entities/project_entity.dart';
 import '../../../domain/entities/saving_entity.dart';
 import '../../../domain/entities/variable_expense_entity.dart';
 import '../database.dart';
@@ -97,4 +98,23 @@ CreditEntity creditFromRow(Credit row) => CreditEntity(
       iconCodePoint: row.iconCodePoint,
       paymentDayOfMonth: row.paymentDayOfMonth,
       insuranceCents: row.insuranceCents,
+    );
+
+ProjectEntity projectFromRow(Project row) => ProjectEntity(
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      targetAmountCents: row.targetAmountCents,
+      desiredDate: row.desiredDate,
+      availableContributionCents: row.availableContributionCents,
+      desiredContributionCents: row.desiredContributionCents,
+      financingMode: row.financingMode,
+      maxMonthlyPaymentCents: row.maxMonthlyPaymentCents,
+      desiredDurationMonths: row.desiredDurationMonths,
+      estimatedRatePercent: row.estimatedRatePercent,
+      extraMonthlyCostCents: row.extraMonthlyCostCents,
+      notes: row.notes,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     );

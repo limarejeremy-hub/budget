@@ -69,7 +69,10 @@ fichier, sur l'appareil. C'est pourquoi la fonction de sauvegarde manuelle
   schéma v4 (avant le jour de prélèvement, l'assurance, le lien
   charge ↔ crédit et l'historique de notifications) migre vers v5 en
   **reliant automatiquement** les charges "Crédit" existantes au crédit
-  correspondant (voir « Fusion Charges/Crédits (V0.9) » ci-dessous).
+  correspondant (voir « Fusion Charges/Crédits (V0.9) » ci-dessous), et
+  qu'une base simulant le schéma v5 (avant la table `Projects`) migre vers
+  v6 sans perdre aucun crédit ni aucune charge existants (voir « Project
+  Planner (V1.0) » ci-dessous).
 
 ### Fusion Charges/Crédits (V0.9)
 
@@ -98,6 +101,20 @@ jamais dupliquer ni exiger de double saisie.
 - Une charge déjà **confirmée** (prélevée) n'est plus jamais réécrite par la
   synchronisation automatique — seul l'historique futur (charges à venir ou
   à confirmer) suit les modifications du crédit.
+
+## Project Planner (V1.0)
+
+- **Schéma v5 → v6** (`AppDatabase.schemaVersion = 6`) ajoute, de façon
+  strictement additive, la table `Projects` — aucune colonne existante
+  n'est modifiée ni supprimée, aucun crédit ni aucune charge n'est touché.
+- La table `Projects` ne stocke que des **entrées saisies par
+  l'utilisateur** (nom, catégorie, prix cible, apport, mode envisagé…) —
+  jamais un score ou une trajectoire calculés, qui restent toujours
+  recalculés à la volée à partir des données réelles (argent libre,
+  crédits actifs, charges) pour ne jamais devenir obsolètes.
+- Ce module est indépendant de l'export/import de sauvegarde existant :
+  aucune modification n'a été apportée au format de sauvegarde pour cette
+  version.
 
 ## Historique des notifications (V0.9)
 

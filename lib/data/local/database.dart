@@ -178,6 +178,31 @@ class NotificationLogs extends Table {
   IntColumn get relatedCreditId => integer().nullable().references(Credits, #id)();
 }
 
+/// Projets (V1.0 — Project Planner) : "puis-je réellement réaliser ce
+/// projet ?". Cette table ne stocke que les INPUTS saisis par l'utilisateur
+/// — jamais un score ou une faisabilité calculée, toujours recalculée à la
+/// volée par `ProjectFeasibilityService` à partir des données financières
+/// courantes (revenus, charges, crédits), pour ne jamais afficher un
+/// résultat obsolète.
+class Projects extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text()();
+  TextColumn get category => text()();
+  IntColumn get targetAmountCents => integer()();
+  DateTimeColumn get desiredDate => dateTime().nullable()();
+  IntColumn get availableContributionCents => integer().withDefault(const Constant(0))();
+  IntColumn get desiredContributionCents => integer().nullable()();
+  TextColumn get financingMode => text()();
+  IntColumn get maxMonthlyPaymentCents => integer().nullable()();
+  IntColumn get desiredDurationMonths => integer().nullable()();
+  RealColumn get estimatedRatePercent => real().nullable()();
+  IntColumn get extraMonthlyCostCents => integer().nullable()();
+  TextColumn get notes => text().nullable()();
+  BoolColumn get isActive => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+}
+
 @DriftDatabase(tables: [
   Categories,
   RecurringTemplates,
@@ -189,6 +214,7 @@ class NotificationLogs extends Table {
   AppSettingsTable,
   Credits,
   NotificationLogs,
+  Projects,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -197,7 +223,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -234,6 +260,11 @@ class AppDatabase extends _$AppDatabase {
             // jamais créer de doublon ni perdre de données — l'utilisateur
             // ne doit jamais ressaisir ses crédits.
             await reconcileCreditLinkedCharges(this);
+          }
+          if (from < 6) {
+            // V1.0 — Project Planner : nouvelle table uniquement, aucune
+            // donnée existante touchée.
+            await m.createTable(projects);
           }
         },
       );
