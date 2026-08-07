@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/formatting/currency_formatter.dart';
 import '../../../core/providers/dashboard_providers.dart';
 import '../../../core/theme/design_tokens.dart';
+import '../../../core/widgets/date_picker_field.dart';
 import '../../../core/widgets/euro_amount_field.dart';
 import '../../../core/widgets/form_actions_row.dart';
+import '../../../domain/calculations/credit_term_calculator.dart';
+
+const _termCalculator = CreditTermCalculator();
 
 /// Ouvre la BottomSheet "Compléter les informations du crédit" — déclenchée
 /// quand une charge fixe est enregistrée avec la catégorie "Crédit" sans
@@ -60,6 +65,12 @@ class _CompleteCreditSheetState extends ConsumerState<CompleteCreditSheet> {
   late final TextEditingController _remainingInstallmentsController;
   bool _saving = false;
 
+  /// La fin du crédit se renseigne au choix — date de fin OU mensualités
+  /// restantes, jamais les deux à la fois. `false` par défaut : préserve le
+  /// comportement historique du champ "Mensualités restantes".
+  bool _useEndDate = false;
+  DateTime _endDate = DateTime.now().add(const Duration(days: 365));
+
   @override
   void initState() {
     super.initState();
@@ -84,16 +95,30 @@ class _CompleteCreditSheetState extends ConsumerState<CompleteCreditSheet> {
 
   Future<void> _create() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_useEndDate && !_endDate.isAfter(DateTime.now())) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('La date de fin doit être dans le futur')));
+      return;
+    }
     setState(() => _saving = true);
 
     final repository = ref.read(cycleRepositoryProvider);
     final initialCents = EuroAmountField.parseCents(_initialAmountController.text)!;
     final remainingCents = EuroAmountField.parseCents(_remainingCapitalController.text)!;
     final rate = double.tryParse(_rateController.text.trim().replaceAll(',', '.'));
-    final remainingInstallments = int.parse(_remainingInstallmentsController.text.trim());
     final organisme = _organismeController.text.trim().isEmpty ? null : _organismeController.text.trim();
     final now = DateTime.now();
-    final expectedEndDate = DateTime(now.year, now.month + remainingInstallments, widget.paymentDayOfMonth);
+
+    final int remainingInstallments;
+    final DateTime expectedEndDate;
+    if (_useEndDate) {
+      expectedEndDate = _endDate;
+      remainingInstallments = _termCalculator.monthsUntil(now, _endDate);
+    } else {
+      remainingInstallments = int.parse(_remainingInstallmentsController.text.trim());
+      expectedEndDate =
+          _termCalculator.addMonths(DateTime(now.year, now.month, widget.paymentDayOfMonth), remainingInstallments);
+    }
 
     try {
       final creditId = await repository.createCreditForExistingCharge(
@@ -158,16 +183,66 @@ class _CompleteCreditSheetState extends ConsumerState<CompleteCreditSheet> {
                 },
               ),
               const SizedBox(height: AppSpacing.lg),
-              TextFormField(
-                controller: _remainingInstallmentsController,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(labelText: 'Mensualités restantes'),
-                validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Champ requis';
-                  return int.tryParse(v.trim()) == null ? 'Nombre invalide' : null;
-                },
+              Text('Fin du crédit', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Mensualités restantes'),
+                      selected: !_useEndDate,
+                      onSelected: (_) => setState(() => _useEndDate = false),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Date de fin prévue'),
+                      selected: _useEndDate,
+                      onSelected: (_) => setState(() => _useEndDate = true),
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(height: AppSpacing.sm),
+              if (_useEndDate) ...[
+                DatePickerField(
+                  label: 'Date de fin prévue',
+                  value: _endDate,
+                  firstDate: DateTime.now(),
+                  onChanged: (d) => setState(() => _endDate = d),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '≈ ${_termCalculator.monthsUntil(DateTime.now(), _endDate)} mensualité(s) restante(s)',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ] else ...[
+                TextFormField(
+                  controller: _remainingInstallmentsController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(labelText: 'Mensualités restantes'),
+                  onChanged: (_) => setState(() {}),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Champ requis';
+                    return int.tryParse(v.trim()) == null ? 'Nombre invalide' : null;
+                  },
+                ),
+                if (int.tryParse(_remainingInstallmentsController.text.trim()) != null) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Fin estimée : ${formatMonthYearFr(_termCalculator.addMonths(DateTime(DateTime.now().year, DateTime.now().month, widget.paymentDayOfMonth), int.parse(_remainingInstallmentsController.text.trim())))}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ],
               const SizedBox(height: AppSpacing.xxl),
               FormActionsRow(
                 onCancel: () => Navigator.of(context).pop(),

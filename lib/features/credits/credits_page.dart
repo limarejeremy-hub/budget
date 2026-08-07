@@ -98,7 +98,8 @@ class _CreditsPageState extends ConsumerState<CreditsPage> {
 /// Charges fixes de catégorie "Crédit" sans crédit lié (migration sans
 /// correspondance fiable, ou incohérence à corriger manuellement) — jamais
 /// masquées, jamais fusionnées silencieusement. Invisible (aucune hauteur)
-/// tant qu'il n'y en a aucune.
+/// tant qu'il n'y en a aucune. Traitement discret (ambre, jamais rouge) :
+/// une information à compléter, pas une erreur système.
 class _ChargesToCompleteSection extends ConsumerWidget {
   const _ChargesToCompleteSection();
 
@@ -108,29 +109,60 @@ class _ChargesToCompleteSection extends ConsumerWidget {
     final charges = chargesAsync.valueOrNull ?? const [];
     if (charges.isEmpty) return const SizedBox.shrink();
 
+    final count = charges.length;
+    final subtitle = count == 1
+        ? '1 charge nécessite quelques informations pour être suivie comme crédit.'
+        : '$count charges nécessitent quelques informations pour être suivies comme crédits.';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 0),
       child: Card(
-        color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.4),
+        margin: EdgeInsets.zero,
+        color: Color.alphaBlend(
+          CategoryColors.credit.withValues(alpha: 0.1),
+          Theme.of(context).colorScheme.surfaceContainerHigh,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Crédits à compléter', style: Theme.of(context).textTheme.titleMedium),
+              Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, size: 18, color: CategoryColors.credit),
+                  const SizedBox(width: AppSpacing.xs),
+                  Text(
+                    count == 1 ? '1 crédit à compléter' : '$count crédits à compléter',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700, color: CategoryColors.credit),
+                  ),
+                ],
+              ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Ces charges sont catégorisées "Crédit" mais ne sont reliées à aucun crédit — complète-les pour que BudgetPilot suive leur capital restant.',
-                style: Theme.of(context).textTheme.bodySmall,
+                subtitle,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
-              const SizedBox(height: AppSpacing.sm),
               for (final charge in charges)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.warning_amber_rounded),
-                  title: Text(charge.name),
-                  subtitle: Text(formatCentsAsEuro(charge.expectedAmountCents)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                  dense: true,
+                  title: Text(charge.name, style: Theme.of(context).textTheme.bodyMedium),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(formatCentsAsEuro(charge.expectedAmountCents),
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(width: AppSpacing.xs),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ],
+                  ),
                   onTap: () => Navigator.of(context).push(AppPageRoute(
                     builder: (_) =>
                         FixedExpenseFormPage(cycleId: charge.cycleId, existing: fixedExpenseFromRow(charge)),
@@ -191,8 +223,7 @@ class _CreditsSummaryHeader extends StatelessWidget {
           children: [
             _SummaryLine(label: 'Capital restant total', value: formatCentsAsEuro(totalCapital)),
             _SummaryLine(label: 'Mensualités totales', value: '${formatCentsAsEuro(totalPayments)}/mois'),
-            _SummaryLine(
-                label: activeCount > 1 ? 'Crédits actifs' : 'Crédit actif', value: '$activeCount'),
+            _SummaryLine(label: activeCount > 1 ? 'Crédits actifs' : 'Crédit actif', value: '$activeCount'),
             _SummaryLine(
               label: 'Fin estimée de tous les crédits',
               value: latestEnd == null ? '—' : formatDayMonthFr(latestEnd),
@@ -328,8 +359,7 @@ class _IndicatorCard extends StatelessWidget {
                 ?.copyWith(color: colorScheme.onSurfaceVariant, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Text(data.creditName,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+          Text(data.creditName, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           for (final line in data.valueLines) ...[
             const SizedBox(height: 2),
             Text(line, style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
@@ -497,8 +527,7 @@ class _CreditCard extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: _MiniStat(
-                        label: 'Mois restants', value: '${credit.remainingInstallments}'),
+                    child: _MiniStat(label: 'Mois restants', value: '${credit.remainingInstallments}'),
                   ),
                   Expanded(
                     child: _MiniStat(label: 'Fin prévue', value: formatDayMonthFr(credit.expectedEndDate)),
@@ -527,10 +556,7 @@ class _CreditCard extends StatelessWidget {
                       ),
                     const SizedBox(width: AppSpacing.xs),
                     Text(priorityLabel,
-                        style: Theme.of(context)
-                            .textTheme
-                            .labelSmall
-                            ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
                   ],
                 ),
               ],

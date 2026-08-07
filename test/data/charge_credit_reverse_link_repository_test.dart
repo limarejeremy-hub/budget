@@ -101,6 +101,37 @@ void main() {
     });
   });
 
+  test('createCreditForExistingCharge accepte un capital restant à 0 (crédit déjà soldé)', () async {
+    final creditId = await repository.createCreditForExistingCharge(
+      name: 'Presque soldé',
+      initialAmountCents: 100000,
+      remainingCapitalCents: 0,
+      monthlyPaymentCents: 5000,
+      expectedEndDate: DateTime(2026, 2, 1),
+      remainingInstallments: 0,
+    );
+
+    final credit = (await repository.loadCredits()).single;
+    expect(credit.id, creditId);
+    expect(credit.remainingCapitalCents, 0);
+    expect(credit.remainingInstallments, 0);
+  });
+
+  test('createCreditForExistingCharge accepte taux et organisme absents (facultatifs)', () async {
+    await repository.createCreditForExistingCharge(
+      name: 'Sans organisme ni taux',
+      initialAmountCents: 100000,
+      remainingCapitalCents: 50000,
+      monthlyPaymentCents: 5000,
+      expectedEndDate: DateTime(2030, 1, 1),
+      remainingInstallments: 10,
+    );
+
+    final credit = (await repository.loadCredits()).single;
+    expect(credit.organisme, isNull);
+    expect(credit.annualRatePercent, isNull);
+  });
+
   test('createCreditForExistingCharge ne génère jamais de charge automatiquement', () async {
     await repository.createCreditForExistingCharge(
       name: 'Voiture',
