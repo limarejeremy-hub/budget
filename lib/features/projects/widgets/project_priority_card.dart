@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/formatting/currency_formatter.dart';
 import '../../../core/providers/credits_providers.dart';
 import '../../../core/providers/dashboard_providers.dart';
 import '../../../core/providers/projects_providers.dart';
 import '../../../core/routing/app_page_route.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../../domain/calculations/credit_calculation_service.dart';
+import '../../../domain/calculations/debt_ratio_bands.dart';
 import '../../../domain/calculations/project_health_service.dart';
 import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/project_entity.dart';
@@ -56,7 +58,7 @@ class ProjectPriorityCard extends ConsumerWidget {
       activeCredits: activeCredits,
     );
     final feasibilityColor = feasibilityLevelColor(health.feasibility.level);
-    final safetyColor = financialSafetyLevelColor(health.safety.level);
+    final debtColor = debtRatioBandColor(debtRatioBandFor(health.debtImpact.debtRatioAfter));
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -80,20 +82,17 @@ class ProjectPriorityCard extends ConsumerWidget {
               Text('${projectCategoryEmoji(priority.category)} ${priority.name}',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: AppSpacing.xs),
-              Row(
-                children: [
-                  Text('Faisabilité ${health.feasibility.totalScore}%',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: feasibilityColor, fontWeight: FontWeight.w700)),
-                  const SizedBox(width: AppSpacing.md),
-                  Text('Sécurité ${health.safety.totalScore}%',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: safetyColor, fontWeight: FontWeight.w700)),
-                ],
+              Text('Faisabilité : ${health.feasibility.totalScore}%',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: feasibilityColor, fontWeight: FontWeight.w700)),
+              Text('Endettement après projet : ${(health.debtImpact.debtRatioAfter * 100).round()}%',
+                  style:
+                      Theme.of(context).textTheme.bodyMedium?.copyWith(color: debtColor, fontWeight: FontWeight.w700)),
+              Text(
+                'Reste à vivre après projet : ${formatCentsAsEuro(health.debtImpact.remainingAfterCents)}/mois',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(health.conclusion, style: Theme.of(context).textTheme.bodySmall),

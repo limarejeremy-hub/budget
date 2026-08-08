@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:budgetpilot/core/constants/app_constants.dart';
+import 'package:budgetpilot/domain/calculations/debt_ratio_bands.dart';
 import 'package:budgetpilot/domain/calculations/project_health_service.dart';
 import 'package:budgetpilot/domain/entities/credit_entity.dart';
 import 'package:budgetpilot/domain/entities/project_entity.dart';
@@ -61,12 +62,11 @@ void main() {
   const service = ProjectHealthService();
 
   group('conclusion', () {
-    test('sécurité faible malgré faisabilité élevée => BudgetPilot déconseille explicitement', () {
+    test('endettement à risque élevé malgré faisabilité élevée => BudgetPilot déconseille explicitement', () {
       // Feasibilité correcte (argent libre confortable face à l'impact
       // mensuel), mais des crédits déjà lourds et une mensualité de
-      // financement qui, cumulés, pèsent fortement sur le revenu et sur la
-      // marge — la sécurité financière reste basse malgré une faisabilité
-      // suffisante.
+      // financement qui, cumulés, poussent le taux d'endettement en zone de
+      // risque élevé malgré une faisabilité suffisante.
       final result = service.evaluate(
         project: _project(
           targetAmountCents: 2000000,
@@ -85,11 +85,11 @@ void main() {
       );
 
       expect(result.feasibility.totalScore, greaterThanOrEqualTo(60));
-      expect(result.safety.totalScore, lessThan(60));
+      expect(debtRatioBandFor(result.debtImpact.debtRatioAfter), DebtRatioBand.high);
       expect(result.conclusion, contains('déconseille'));
     });
 
-    test('projet à la fois faisable et sain : conclusion positive sans "déconseille"', () {
+    test('projet à la fois faisable et raisonnable pour le budget : conclusion positive sans "déconseille"', () {
       final result = service.evaluate(
         project: _project(
           targetAmountCents: 1000000,
@@ -102,11 +102,13 @@ void main() {
       );
 
       expect(result.feasibility.totalScore, greaterThanOrEqualTo(60));
-      expect(result.safety.totalScore, greaterThanOrEqualTo(60));
+      expect(debtRatioBandFor(result.debtImpact.debtRatioAfter), DebtRatioBand.comfortable);
       expect(result.conclusion, isNot(contains('déconseille')));
     });
 
-    test('le score global ne masque jamais les deux scores détaillés', () {
+    test(
+        'les indicateurs concrets (endettement, reste à vivre) restent toujours accessibles à côté de la '
+        'faisabilité — jamais masqués derrière un seul score global', () {
       final result = service.evaluate(
         project: _project(),
         currentFreeCashCents: 200000,
@@ -115,8 +117,9 @@ void main() {
       );
 
       expect(result.feasibility.totalScore, isNotNull);
-      expect(result.safety.totalScore, isNotNull);
-      expect(result.healthScore, inInclusiveRange(0, 100));
+      expect(result.debtImpact.debtRatioAfter, isNotNull);
+      expect(result.debtImpact.remainingAfterCents, isNotNull);
+      expect(result.conclusion, isNotEmpty);
     });
   });
 

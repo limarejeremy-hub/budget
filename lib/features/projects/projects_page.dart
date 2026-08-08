@@ -10,9 +10,9 @@ import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
+import '../../domain/calculations/debt_ratio_bands.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
 import '../../domain/calculations/project_health_service.dart';
-import '../../domain/calculations/project_safety_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import '../../domain/entities/project_entity.dart';
 import 'project_detail_page.dart';
@@ -150,7 +150,8 @@ class _ProjectCard extends StatelessWidget {
       activeCredits: activeCredits,
     );
     final feasibilityColor = feasibilityLevelColor(health.feasibility.level);
-    final safetyColor = financialSafetyLevelColor(health.safety.level);
+    final debtBand = debtRatioBandFor(health.debtImpact.debtRatioAfter);
+    final debtColor = debtRatioBandColor(debtBand);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Card(
@@ -204,8 +205,14 @@ class _ProjectCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Faisabilité ${health.feasibility.totalScore}%', style: Theme.of(context).textTheme.bodySmall),
-                  Text('Sécurité ${health.safety.totalScore}%', style: Theme.of(context).textTheme.bodySmall),
+                  Text('Endettement ${(health.debtImpact.debtRatioAfter * 100).round()}%',
+                      style: Theme.of(context).textTheme.bodySmall),
                 ],
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Reste à vivre ${formatCentsAsEuro(health.debtImpact.remainingAfterCents)}/mois',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: AppSpacing.xs),
               Wrap(
@@ -218,9 +225,8 @@ class _ProjectCard extends StatelessWidget {
                     color: feasibilityColor,
                   ),
                   _LevelChip(
-                    text:
-                        '${financialSafetyLevelEmoji(health.safety.level)} Budget ${financialSafetyLevelLabel(health.safety.level).toLowerCase()}',
-                    color: safetyColor,
+                    text: '${debtRatioBandEmoji(debtBand)} ${debtRatioBandLabel(debtBand)}',
+                    color: debtColor,
                   ),
                 ],
               ),

@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/credits_providers.dart';
+import '../../core/providers/dashboard_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/staggered_fade_in.dart';
 import '../../data/local/converters/entity_mappers.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/entities/credit_entity.dart';
+import '../../domain/models/dashboard_view_data.dart';
 import '../entries/fixed_expense_form_page.dart';
 import 'credit_detail_page.dart';
 import 'credit_form_page.dart';
@@ -34,6 +36,7 @@ class _CreditsPageState extends ConsumerState<CreditsPage> {
   @override
   Widget build(BuildContext context) {
     final creditsAsync = ref.watch(creditsProvider);
+    final dashboardAsync = ref.watch(dashboardProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Crédits')),
@@ -60,7 +63,7 @@ class _CreditsPageState extends ConsumerState<CreditsPage> {
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 88),
                     children: [
-                      _CreditsSummaryHeader(credits: credits),
+                      _CreditsSummaryHeader(credits: credits, dashboard: dashboardAsync.valueOrNull),
                       const SizedBox(height: AppSpacing.lg),
                       _IndicatorsSection(credits: credits),
                       const SizedBox(height: AppSpacing.xl),
@@ -204,16 +207,32 @@ class _EmptyCredits extends StatelessWidget {
   }
 }
 
+/// Bloc récapitulatif principal de la page Crédits — inclut le taux
+/// d'endettement et le reste à vivre actuels (V1.2), calculés avec LA seule
+/// formule partagée par toute l'application (`CreditCalculationService.
+/// debtRatio` ; le reste à vivre est directement l'argent libre déjà
+/// calculé par `BudgetCalculationService`, jamais recalculé ici). Les
+/// mensualités de crédits liés à une charge fixe ne sont comptées qu'une
+/// seule fois : `credits` porte la mensualité, la charge fixe liée n'est
+/// qu'un affichage de cette même mensualité dans le cycle, jamais une
+/// deuxième saisie.
 class _CreditsSummaryHeader extends StatelessWidget {
   final List<CreditEntity> credits;
-  const _CreditsSummaryHeader({required this.credits});
+  final DashboardViewData? dashboard;
+  const _CreditsSummaryHeader({required this.credits, required this.dashboard});
 
   @override
   Widget build(BuildContext context) {
+    final activeCredits = _creditCalculationService.activeOnly(credits);
     final totalCapital = _creditCalculationService.totalRemainingCapital(credits);
     final totalPayments = _creditCalculationService.totalMonthlyPayments(credits);
     final activeCount = _creditCalculationService.activeCount(credits);
-    final latestEnd = _creditCalculationService.latestActiveEndDate(credits);
+    final earliest = _creditCalculationService.earliestEnding(credits);
+    final income = dashboard?.totalIncomeCents;
+    final debtRatio = income == null
+        ? null
+        : _creditCalculationService.debtRatio(activeCredits: activeCredits, totalIncomeCents: income);
+    final remaining = dashboard?.realRemainingCents;
 
     return Card(
       child: Padding(
@@ -223,10 +242,18 @@ class _CreditsSummaryHeader extends StatelessWidget {
           children: [
             _SummaryLine(label: 'Capital restant total', value: formatCentsAsEuro(totalCapital)),
             _SummaryLine(label: 'Mensualités totales', value: '${formatCentsAsEuro(totalPayments)}/mois'),
+            _SummaryLine(
+              label: 'Taux d\'endettement actuel',
+              value: debtRatio == null ? '—' : '${(debtRatio * 100).round()} %',
+            ),
+            _SummaryLine(
+              label: 'Reste à vivre actuel',
+              value: remaining == null ? '—' : '${formatCentsAsEuro(remaining)}/mois',
+            ),
             _SummaryLine(label: activeCount > 1 ? 'Crédits actifs' : 'Crédit actif', value: '$activeCount'),
             _SummaryLine(
-              label: 'Fin estimée de tous les crédits',
-              value: latestEnd == null ? '—' : formatDayMonthFr(latestEnd),
+              label: 'Prochain crédit terminé',
+              value: earliest == null ? '—' : '${earliest.name} — dans ${earliest.remainingInstallments} mois',
             ),
           ],
         ),
@@ -251,7 +278,13 @@ class _SummaryLine extends StatelessWidget {
             child: Text(label,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
           ),
-          Text(value, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
         ],
       ),
     );

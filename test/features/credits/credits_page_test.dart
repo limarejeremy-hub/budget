@@ -152,6 +152,86 @@ void main() {
     expect(find.text(formatCentsAsEuro(19800000)), findsWidgets);
   });
 
+  group('bloc récapitulatif : taux d\'endettement et reste à vivre (V1.2)', () {
+    testWidgets('sans cycle actif, les libellés apparaissent avec une valeur inconnue', (tester) async {
+      useTallViewport(tester);
+      await repository.createCredit(
+        name: 'Voiture',
+        initialAmountCents: 1500000,
+        remainingCapitalCents: 900000,
+        monthlyPaymentCents: 25000,
+        expectedEndDate: DateTime(2029, 1, 1),
+        remainingInstallments: 36,
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Taux d\'endettement actuel'), findsOneWidget);
+      expect(find.text('Reste à vivre actuel'), findsOneWidget);
+      expect(find.textContaining('—'), findsWidgets);
+      expect(find.text('Prochain crédit terminé'), findsOneWidget);
+      expect(find.textContaining('Voiture — dans 36 mois'), findsOneWidget);
+    });
+
+    testWidgets('avec un cycle et des revenus, calcule le taux d\'endettement et le reste à vivre réels',
+        (tester) async {
+      useTallViewport(tester);
+      final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await repository.createIncome(
+        cycleId: cycleId,
+        name: 'Salaire',
+        expectedAmountCents: 300000,
+        expectedDate: DateTime(2026, 1, 1),
+      );
+      // createCredit génère automatiquement la charge fixe liée dans le
+      // cycle en cours (V0.9) — sa mensualité ne doit être comptée qu'une
+      // seule fois dans le reste à vivre (déjà déduite via cette charge) et
+      // dans le taux d'endettement (calculé séparément, sur les revenus).
+      await repository.createCredit(
+        name: 'Voiture',
+        initialAmountCents: 1500000,
+        remainingCapitalCents: 900000,
+        monthlyPaymentCents: 60000,
+        expectedEndDate: DateTime(2029, 1, 1),
+        remainingInstallments: 36,
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      // Taux d'endettement = 60000 / 300000 = 20 %.
+      expect(find.text('20 %'), findsOneWidget);
+      // Reste à vivre = 300000 (revenu) - 60000 (charge liée au crédit,
+      // comptée une seule fois) = 240000.
+      expect(find.text('${formatCentsAsEuro(240000)}/mois'), findsOneWidget);
+    });
+
+    testWidgets('la page Crédits n\'affiche plus jamais de score de "sécurité"', (tester) async {
+      useTallViewport(tester);
+      final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await repository.createIncome(
+        cycleId: cycleId,
+        name: 'Salaire',
+        expectedAmountCents: 300000,
+        expectedDate: DateTime(2026, 1, 1),
+      );
+      await repository.createCredit(
+        name: 'Voiture',
+        initialAmountCents: 1500000,
+        remainingCapitalCents: 900000,
+        monthlyPaymentCents: 60000,
+        expectedEndDate: DateTime(2029, 1, 1),
+        remainingInstallments: 36,
+      );
+
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Sécurité'), findsNothing);
+    });
+  });
+
   testWidgets('affiche la banque (organisme) et le score visuel sur la carte du crédit', (tester) async {
     useTallViewport(tester);
     await repository.createCredit(

@@ -75,6 +75,9 @@ void main() {
     expect(find.text('🎯 PROJET PRIORITAIRE'), findsOneWidget);
     expect(find.textContaining('Porsche Boxster'), findsOneWidget);
     expect(find.text('Voir le projet'), findsOneWidget);
+    expect(find.textContaining('Endettement après projet'), findsOneWidget);
+    expect(find.textContaining('Reste à vivre après projet'), findsOneWidget);
+    expect(find.textContaining('Sécurité'), findsNothing);
   });
 
   testWidgets("un projet archivé n'apparaît pas comme prioritaire", (tester) async {

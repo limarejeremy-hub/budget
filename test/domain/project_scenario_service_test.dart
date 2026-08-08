@@ -76,11 +76,13 @@ void main() {
       expect(wait.first.newScore, greaterThan(wait.first.baselineScore));
     });
 
-    test('un crédit qui se termine améliore aussi le score de sécurité, pas seulement la faisabilité', () {
+    test('un crédit qui se termine améliore aussi l\'endettement et le reste à vivre, pas seulement la faisabilité',
+        () {
       // Projet modeste (mensualité significative face à l'argent libre
       // actuel, mais pas déjà hors de portée) : la fin du crédit "Auto"
-      // libère assez de marge pour faire bouger la sécurité, sans que les
-      // deux scores soient déjà saturés au plancher ou au plafond.
+      // libère assez de marge pour faire bouger l'endettement et le reste à
+      // vivre, sans que les indicateurs soient déjà saturés au plancher ou
+      // au plafond.
       final scenarios = service.generate(
         project: _project(targetAmountCents: 600000, availableContributionCents: 200000, desiredDurationMonths: 36),
         currentFreeCashCents: 40000,
@@ -90,7 +92,8 @@ void main() {
       );
 
       final wait = scenarios.firstWhere((s) => s.type == ProjectScenarioType.waitForCredit);
-      expect(wait.newSafetyScore, greaterThan(wait.baselineSafetyScore));
+      expect(wait.newDebtRatioAfter, lessThan(wait.baselineDebtRatioAfter));
+      expect(wait.newRemainingAfterCents, greaterThan(wait.baselineRemainingAfterCents));
     });
 
     test('aucun scénario "attendre un crédit" sans crédit actif', () {
@@ -242,32 +245,32 @@ void main() {
     });
 
     test(
-        'privilégie la sécurité : un scénario plus sûr est préféré à un scénario plus faisable mais peu sûr '
-        '(V1.1, §9)', () {
+        'privilégie un endettement raisonnable : un scénario moins risqué est préféré à un scénario plus '
+        'faisable mais avec un endettement à risque élevé (V1.1/V1.2, §9)', () {
       const risky = ProjectScenario(
         type: ProjectScenarioType.increaseContribution,
-        label: 'Scénario A (faisabilité max, sécurité faible)',
+        label: 'Scénario A (faisabilité max, endettement à risque élevé)',
         description: '',
         cashRequiredCents: 100000,
         newFinancingNeededCents: 0,
         newScore: 90,
         baselineScore: 60,
-        newSafetyScore: 42,
-        baselineSafetyScore: 55,
+        baselineDebtRatioAfter: 0.35,
         newDebtRatioAfter: 0.45,
+        baselineRemainingAfterCents: 90000,
         newRemainingAfterCents: 30000,
       );
       const safer = ProjectScenario(
         type: ProjectScenarioType.waitForCredit,
-        label: 'Scénario B (faisabilité correcte, sécurité saine)',
+        label: 'Scénario B (faisabilité correcte, endettement confortable)',
         description: '',
         horizonMonths: 6,
         newFinancingNeededCents: 0,
         newScore: 83,
         baselineScore: 60,
-        newSafetyScore: 88,
-        baselineSafetyScore: 55,
+        baselineDebtRatioAfter: 0.35,
         newDebtRatioAfter: 0.25,
+        baselineRemainingAfterCents: 90000,
         newRemainingAfterCents: 180000,
       );
 
@@ -277,7 +280,7 @@ void main() {
     });
 
     test(
-        'si aucun scénario n\'atteint la sécurité minimale, recommande quand même le meilleur compromis '
+        'si aucun scénario ne garde un endettement raisonnable, recommande quand même le meilleur compromis '
         'disponible plutôt que de n\'en proposer aucun', () {
       const onlyRisky = ProjectScenario(
         type: ProjectScenarioType.increaseContribution,
@@ -286,9 +289,9 @@ void main() {
         newFinancingNeededCents: 0,
         newScore: 70,
         baselineScore: 50,
-        newSafetyScore: 30,
-        baselineSafetyScore: 20,
+        baselineDebtRatioAfter: 0.42,
         newDebtRatioAfter: 0.5,
+        baselineRemainingAfterCents: 15000,
         newRemainingAfterCents: 10000,
       );
 

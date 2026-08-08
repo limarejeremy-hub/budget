@@ -83,6 +83,32 @@ void main() {
     expect(service.activeCount(credits), 3);
   });
 
+  group('debtRatio (V1.2 — seule formule de taux d\'endettement de l\'application)', () {
+    test('mensualités des crédits actifs / revenus mensuels, crédits terminés exclus', () {
+      // Mensualités actives : 25000 (Voiture) + 5000 (Montre) + 90000 (Maison) = 120000.
+      final ratio = service.debtRatio(activeCredits: service.activeOnly(credits), totalIncomeCents: 300000);
+      expect(ratio, closeTo(120000 / 300000, 1e-9));
+    });
+
+    test('ajoute une mensualité supplémentaire (ex : financement d\'un projet) au numérateur', () {
+      final withoutExtra = service.debtRatio(activeCredits: service.activeOnly(credits), totalIncomeCents: 300000);
+      final withExtra = service.debtRatio(
+        activeCredits: service.activeOnly(credits),
+        totalIncomeCents: 300000,
+        extraMonthlyPaymentCents: 30000,
+      );
+      expect(withExtra, closeTo(withoutExtra + 30000 / 300000, 1e-9));
+    });
+
+    test('aucun revenu enregistré => 0.0, jamais une valeur fictive', () {
+      expect(service.debtRatio(activeCredits: service.activeOnly(credits), totalIncomeCents: 0), 0.0);
+    });
+
+    test('aucun crédit actif => 0.0', () {
+      expect(service.debtRatio(activeCredits: const [], totalIncomeCents: 300000), 0.0);
+    });
+  });
+
   test('identifie le crédit actif se terminant le plus tôt', () {
     expect(service.earliestEnding(credits)?.name, 'Montre');
   });
@@ -153,8 +179,7 @@ void main() {
   });
 
   group('priorité automatique (étoiles)', () {
-    final samsungFold =
-        _credit(id: 5, name: 'Samsung Fold', remainingCapitalCents: 32000, remainingInstallments: 4);
+    final samsungFold = _credit(id: 5, name: 'Samsung Fold', remainingCapitalCents: 32000, remainingInstallments: 4);
 
     test('moins de 6 mensualités restantes => 5 étoiles, "Priorité maximale"', () {
       expect(service.priorityStars(samsungFold), 5);
@@ -179,8 +204,7 @@ void main() {
 
   group('score visuel automatique (CreditPace)', () {
     test('moins de 12 mensualités restantes => veryClose, "Très proche de la fin"', () {
-      final samsungFold =
-          _credit(id: 8, name: 'Samsung Fold', remainingInstallments: 4);
+      final samsungFold = _credit(id: 8, name: 'Samsung Fold', remainingInstallments: 4);
       expect(service.creditPace(samsungFold), CreditPace.veryClose);
       expect(service.creditPaceLabel(samsungFold), 'Très proche de la fin');
     });

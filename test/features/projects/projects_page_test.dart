@@ -72,6 +72,33 @@ void main() {
     expect(find.text('Porsche Boxster'), findsOneWidget);
   });
 
+  testWidgets('la carte projet affiche l\'endettement concret, plus jamais un score de "sécurité" (V1.2)',
+      (tester) async {
+    useTallViewport(tester);
+    await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    await repository.createIncome(
+      cycleId: (await repository.loadCurrentCycleData())!.cycle.id,
+      name: 'Salaire',
+      expectedAmountCents: 300000,
+      expectedDate: DateTime(2026, 1, 1),
+    );
+    await repository.createProject(
+      name: 'Porsche Boxster',
+      category: ProjectCategory.car,
+      targetAmountCents: 4000000,
+      availableContributionCents: 800000,
+      financingMode: ProjectFinancingMode.mixed,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.textContaining('Endettement'), findsWidgets);
+    expect(find.textContaining('Reste à vivre'), findsWidgets);
+    expect(find.textContaining('Sécurité'), findsNothing);
+  });
+
   testWidgets('le bouton + ouvre le formulaire de création', (tester) async {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();

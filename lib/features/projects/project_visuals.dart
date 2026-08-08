@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../domain/calculations/debt_ratio_bands.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
-import '../../domain/calculations/project_safety_service.dart';
 
 /// Couleur associée à un [FeasibilityLevel] — rouge réservé au seul cas
 /// réellement problématique (<40), jamais utilisé pour une simple prudence.
@@ -21,24 +21,10 @@ Color feasibilityLevelColor(FeasibilityLevel level) {
   }
 }
 
-/// Couleur associée à un [FinancialSafetyLevel] (V1.1) — vert = sain, jaune
-/// = acceptable, orange = tendu, rouge réservé au risque réellement élevé.
-Color financialSafetyLevelColor(FinancialSafetyLevel level) {
-  switch (level) {
-    case FinancialSafetyLevel.critical:
-      return const Color(0xFFD9524A);
-    case FinancialSafetyLevel.tense:
-      return const Color(0xFFF2A93B);
-    case FinancialSafetyLevel.acceptable:
-      return const Color(0xFFD9B036);
-    case FinancialSafetyLevel.healthy:
-      return const Color(0xFF3FBE7A);
-  }
-}
-
-/// Couleur associée à un [DebtRatioBand] (V1.1) — mêmes codes couleur que
-/// [financialSafetyLevelColor], jamais présentée comme une décision
-/// bancaire (voir doc `project_safety_service.dart`).
+/// Couleur associée à un [DebtRatioBand] (V1.1/V1.2) — vert = confortable,
+/// jaune = à surveiller, orange = tendu, rouge réservé au risque réellement
+/// élevé. Jamais présentée comme une décision bancaire (voir doc
+/// `debt_ratio_bands.dart`).
 Color debtRatioBandColor(DebtRatioBand band) {
   switch (band) {
     case DebtRatioBand.high:

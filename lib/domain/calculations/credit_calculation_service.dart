@@ -7,8 +7,7 @@ import '../entities/credit_entity.dart';
 class CreditCalculationService {
   const CreditCalculationService();
 
-  List<CreditEntity> activeOnly(List<CreditEntity> credits) =>
-      credits.where((c) => c.isActive).toList();
+  List<CreditEntity> activeOnly(List<CreditEntity> credits) => credits.where((c) => c.isActive).toList();
 
   int totalRemainingCapital(List<CreditEntity> credits) =>
       activeOnly(credits).fold(0, (sum, c) => sum + c.remainingCapitalCents);
@@ -17,6 +16,21 @@ class CreditCalculationService {
       activeOnly(credits).fold(0, (sum, c) => sum + c.monthlyPaymentCents);
 
   int activeCount(List<CreditEntity> credits) => activeOnly(credits).length;
+
+  /// Taux d'endettement — LA seule formule utilisée dans toute l'application
+  /// (Accueil, Crédits, Projets, Simulations, Scénarios) : mensualités des
+  /// crédits actifs, plus une éventuelle mensualité supplémentaire (ex : le
+  /// financement d'un projet), rapportées aux revenus mensuels réellement
+  /// enregistrés. Jamais recalculée différemment ailleurs, jamais de valeur
+  /// fictive : `0.0` si aucun revenu n'est enregistré.
+  double debtRatio({
+    required List<CreditEntity> activeCredits,
+    required int totalIncomeCents,
+    int extraMonthlyPaymentCents = 0,
+  }) {
+    if (totalIncomeCents <= 0) return 0.0;
+    return (totalMonthlyPayments(activeCredits) + extraMonthlyPaymentCents) / totalIncomeCents;
+  }
 
   /// Le crédit actif dont la date de fin prévue est la plus proche.
   CreditEntity? earliestEnding(List<CreditEntity> credits) {
@@ -68,8 +82,7 @@ class CreditCalculationService {
 
   /// Tri "Plus coûteux" — taux le plus élevé d'abord ; les crédits sans
   /// taux renseigné sont toujours placés en dernier.
-  List<CreditEntity> sortByHighestRate(List<CreditEntity> credits) =>
-      [...credits]..sort(_byRateDescending);
+  List<CreditEntity> sortByHighestRate(List<CreditEntity> credits) => [...credits]..sort(_byRateDescending);
 
   /// Tri "Plus grosse mensualité libérée" — mensualité la plus élevée
   /// d'abord.
@@ -157,8 +170,7 @@ CreditPrepaymentSimulation simulateCreditPrepayment({
   required CreditEntity credit,
   required int extraPaymentCents,
 }) {
-  final remainingAfter =
-      (credit.remainingCapitalCents - extraPaymentCents).clamp(0, credit.remainingCapitalCents);
+  final remainingAfter = (credit.remainingCapitalCents - extraPaymentCents).clamp(0, credit.remainingCapitalCents);
   final monthlyPayment = credit.monthlyPaymentCents;
   final newInstallments = monthlyPayment > 0 ? (remainingAfter / monthlyPayment).ceil() : 0;
   final monthsSaved = (credit.remainingInstallments - newInstallments).clamp(0, credit.remainingInstallments);
@@ -217,9 +229,8 @@ List<CreditRepaymentOption> simulateAcrossActiveCredits({
     final simulation = simulateCreditPrepayment(credit: credit, extraPaymentCents: extraPaymentCents);
     final fullyRepaid = extraPaymentCents >= credit.remainingCapitalCents;
     final rate = credit.annualRatePercent;
-    final interestSaved = rate == null
-        ? null
-        : (extraPaymentCents * (rate / 100 / 12) * simulation.monthsSaved).round();
+    final interestSaved =
+        rate == null ? null : (extraPaymentCents * (rate / 100 / 12) * simulation.monthsSaved).round();
     return CreditRepaymentOption(
       credit: credit,
       wouldBeFullyRepaid: fullyRepaid,

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:budgetpilot/core/constants/app_constants.dart';
-import 'package:budgetpilot/domain/calculations/project_safety_service.dart';
+import 'package:budgetpilot/domain/calculations/project_debt_impact_service.dart';
 import 'package:budgetpilot/domain/entities/credit_entity.dart';
 import 'package:budgetpilot/domain/entities/project_entity.dart';
 
@@ -58,7 +58,7 @@ CreditEntity _credit({
 }
 
 void main() {
-  const service = ProjectSafetyService();
+  const service = ProjectDebtImpactService();
 
   group('reste à vivre', () {
     test('reste à vivre après = reste à vivre actuel - impact mensuel du projet', () {
@@ -74,7 +74,9 @@ void main() {
       expect(result.remainingDeltaCents, result.remainingAfterCents - 200000);
     });
 
-    test('revenu modifié : le score de reste à vivre change avec le revenu, à impact égal', () {
+    test(
+        'revenu modifié : ne change jamais le reste à vivre (indépendant du revenu), mais change le taux '
+        "d'endettement (dépend du revenu)", () {
       final lowIncome = service.evaluate(
         project: _project(),
         currentFreeCashCents: 100000,
@@ -88,7 +90,8 @@ void main() {
         activeCredits: const [],
       );
 
-      expect(highIncome.score.remainingLivingScore, greaterThan(lowIncome.score.remainingLivingScore));
+      expect(highIncome.remainingAfterCents, lowIncome.remainingAfterCents);
+      expect(highIncome.debtRatioAfter, lessThan(lowIncome.debtRatioAfter));
     });
 
     test('charge modifiée (argent libre différent) change le reste à vivre après projet', () {
@@ -125,6 +128,9 @@ void main() {
       );
 
       expect(withoutExtra.debtRatioAfter, withExtra.debtRatioAfter);
+      // Les coûts supplémentaires pèsent en revanche bien sur le reste à
+      // vivre — c'est là, et uniquement là, qu'ils sont comptés.
+      expect(withExtra.remainingAfterCents, lessThan(withoutExtra.remainingAfterCents));
     });
 
     test("taux d'endettement après intègre la mensualité de financement du projet", () {
@@ -159,9 +165,9 @@ void main() {
         'crédit déjà comptées dans les charges fixes', () {
       // L'argent libre (currentFreeCashCents) est déjà net des mensualités de
       // crédit — elles apparaissent dans les charges fixes une seule fois
-      // (charge liée). Le moteur de sécurité ne doit JAMAIS les soustraire
-      // une seconde fois du reste à vivre : il ne les réutilise que pour le
-      // taux d'endettement (un autre indicateur, une autre division).
+      // (charge liée). Le moteur d'impact ne doit JAMAIS les soustraire une
+      // seconde fois du reste à vivre : il ne les réutilise que pour le taux
+      // d'endettement (un autre indicateur, une autre division).
       const creditMonthlyPaymentCents = 30000;
       const incomeCents = 300000;
       // Argent libre déjà net de cette mensualité (comme le fournirait
@@ -232,12 +238,12 @@ void main() {
       );
 
       expect(bigContribution.marginConsumedByProjectCents, lessThan(smallContribution.marginConsumedByProjectCents));
-      expect(bigContribution.totalScore, greaterThanOrEqualTo(smallContribution.totalScore));
+      expect(bigContribution.remainingAfterCents, greaterThanOrEqualTo(smallContribution.remainingAfterCents));
     });
   });
 
   group('apport supplémentaire', () {
-    test('augmenter l\'apport disponible réduit l\'impact mensuel et améliore le score de sécurité', () {
+    test('augmenter l\'apport disponible réduit l\'impact mensuel et améliore le reste à vivre', () {
       final before = service.evaluate(
         project: _project(availableContributionCents: 500000),
         currentFreeCashCents: 200000,
@@ -251,13 +257,13 @@ void main() {
         activeCredits: const [],
       );
 
-      expect(afterMoreContribution.totalScore, greaterThanOrEqualTo(before.totalScore));
       expect(afterMoreContribution.remainingAfterCents, greaterThanOrEqualTo(before.remainingAfterCents));
+      expect(afterMoreContribution.debtRatioAfter, lessThanOrEqualTo(before.debtRatioAfter));
     });
   });
 
   group('baisse du prix', () {
-    test('réduire le prix cible réduit l\'impact mensuel et améliore (ou égale) le score', () {
+    test('réduire le prix cible réduit l\'impact mensuel et améliore (ou égale) le reste à vivre', () {
       final expensive = service.evaluate(
         project: _project(targetAmountCents: 5000000),
         currentFreeCashCents: 200000,
@@ -271,12 +277,12 @@ void main() {
         activeCredits: const [],
       );
 
-      expect(cheaper.totalScore, greaterThanOrEqualTo(expensive.totalScore));
+      expect(cheaper.remainingAfterCents, greaterThanOrEqualTo(expensive.remainingAfterCents));
     });
   });
 
-  group('score et niveaux', () {
-    test('projet largement dans les moyens : score élevé, niveau sain', () {
+  group('situations concrètes', () {
+    test('projet largement dans les moyens : endettement confortable, reste à vivre confortable', () {
       final result = service.evaluate(
         project: _project(
           targetAmountCents: 1000000,
@@ -288,11 +294,11 @@ void main() {
         activeCredits: const [],
       );
 
-      expect(result.level, FinancialSafetyLevel.healthy);
-      expect(result.totalScore, greaterThanOrEqualTo(80));
+      expect(debtRatioBandFor(result.debtRatioAfter), DebtRatioBand.comfortable);
+      expect(result.remainingAfterCents, greaterThan(0));
     });
 
-    test('projet qui dépasse largement les capacités : score très faible, niveau critique', () {
+    test('projet qui dépasse largement les capacités : endettement à risque élevé, reste à vivre négatif', () {
       final result = service.evaluate(
         project: _project(
           targetAmountCents: 8000000,
@@ -306,11 +312,11 @@ void main() {
         activeCredits: [_credit(id: 1, name: 'Auto', monthlyPaymentCents: 40000)],
       );
 
-      expect(result.level, FinancialSafetyLevel.critical);
-      expect(result.totalScore, lessThan(40));
+      expect(debtRatioBandFor(result.debtRatioAfter), DebtRatioBand.high);
+      expect(result.remainingAfterCents, lessThan(0));
     });
 
-    test('coûts mensuels supplémentaires abaissent le score même pour un projet comptant', () {
+    test('coûts mensuels supplémentaires réduisent le reste à vivre même pour un projet comptant', () {
       final withoutExtra = service.evaluate(
         project: _project(financingMode: ProjectFinancingMode.cash),
         currentFreeCashCents: 150000,
@@ -324,7 +330,7 @@ void main() {
         activeCredits: const [],
       );
 
-      expect(withExtra.totalScore, lessThanOrEqualTo(withoutExtra.totalScore));
+      expect(withExtra.remainingAfterCents, lessThan(withoutExtra.remainingAfterCents));
     });
   });
 }

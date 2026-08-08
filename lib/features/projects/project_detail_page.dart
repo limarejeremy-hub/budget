@@ -9,9 +9,9 @@ import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
+import '../../domain/calculations/project_debt_impact_service.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
 import '../../domain/calculations/project_health_service.dart';
-import '../../domain/calculations/project_safety_service.dart';
 import '../../domain/calculations/project_scenario_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import '../../domain/entities/project_entity.dart';
@@ -24,9 +24,10 @@ const _scenarioService = ProjectScenarioService();
 const _creditCalculationService = CreditCalculationService();
 
 /// Fiche détaillée d'un projet (V1.0 — Project Planner, §12 ; enrichie
-/// V1.1 — Safe Projects, §11 : sécurité financière, taux d'endettement,
-/// reste à vivre). Toujours recalculée à la volée à partir des données
-/// courantes — jamais un résultat figé (§18).
+/// V1.1/V1.2 : taux d'endettement et reste à vivre, avant/après — des
+/// indicateurs concrets, jamais un pourcentage de "sécurité" calculé).
+/// Toujours recalculée à la volée à partir des données courantes — jamais
+/// un résultat figé (§18).
 class ProjectDetailPage extends ConsumerWidget {
   final int projectId;
   const ProjectDetailPage({super.key, required this.projectId});
@@ -134,7 +135,7 @@ class _ProjectDetailBody extends ConsumerWidget {
         const SizedBox(height: AppSpacing.xl),
         _SituationSection(result: health.feasibility),
         const SizedBox(height: AppSpacing.xl),
-        _SafetySection(safety: health.safety),
+        _DebtImpactSection(debtImpact: health.debtImpact),
         if (health.blockers.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xl),
           _BlockersSection(blockers: health.blockers),
@@ -176,7 +177,7 @@ class _HeaderSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final feasibilityColor = feasibilityLevelColor(health.feasibility.level);
-    final safetyColor = financialSafetyLevelColor(health.safety.level);
+    final debtBand = debtRatioBandFor(health.debtImpact.debtRatioAfter);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -213,15 +214,19 @@ class _HeaderSection extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
-              child: _ScoreBadge(
-                label: 'Sécurité',
-                score: health.safety.totalScore,
-                color: safetyColor,
-                levelText:
-                    '${financialSafetyLevelEmoji(health.safety.level)} ${financialSafetyLevelLabel(health.safety.level)}',
+              child: _MetricBadge(
+                label: 'Endettement après projet',
+                value: '${(health.debtImpact.debtRatioAfter * 100).round()} %',
+                color: debtRatioBandColor(debtBand),
+                subText: '${debtRatioBandEmoji(debtBand)} ${debtRatioBandLabel(debtBand)}',
               ),
             ),
           ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Reste à vivre après projet : ${formatCentsAsEuro(health.debtImpact.remainingAfterCents)}/mois',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: AppSpacing.md),
         Text(health.conclusion, style: Theme.of(context).textTheme.bodyMedium),
@@ -254,6 +259,40 @@ class _ScoreBadge extends StatelessWidget {
           Text('$score%',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w700)),
           Text(levelText, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ),
+    );
+  }
+}
+
+/// Badge d'un indicateur concret (taux d'endettement, reste à vivre) — même
+/// habillage visuel que [_ScoreBadge] mais sans laisser croire à un score
+/// calculé : la valeur affichée est directement lisible (%, €), jamais un
+/// pourcentage de "sécurité" agrégé.
+class _MetricBadge extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final String subText;
+  const _MetricBadge({required this.label, required this.value, required this.color, required this.subText});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 2),
+          Text(value,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color, fontWeight: FontWeight.w700)),
+          Text(subText, style: Theme.of(context).textTheme.labelSmall),
         ],
       ),
     );
@@ -384,47 +423,50 @@ class _SituationSection extends StatelessWidget {
   }
 }
 
-/// "Sécurité après projet" (§11 V1.1) — reste à vivre, taux d'endettement,
-/// marge consommée, score de sécurité, jamais une décision bancaire.
-class _SafetySection extends StatelessWidget {
-  final ProjectSafetyResult safety;
-  const _SafetySection({required this.safety});
+/// Impact du projet sur le budget (V1.2 — analyse simplifiée) : taux
+/// d'endettement et reste à vivre, avant/après, avec la variation —
+/// uniquement des chiffres concrets, jamais un pourcentage de "sécurité"
+/// ni une décision bancaire.
+class _DebtImpactSection extends StatelessWidget {
+  final ProjectDebtImpactResult debtImpact;
+  const _DebtImpactSection({required this.debtImpact});
 
   @override
   Widget build(BuildContext context) {
-    final debtBand = debtRatioBandFor(safety.debtRatioAfter);
-    final color = financialSafetyLevelColor(safety.level);
+    final debtBandAfter = debtRatioBandFor(debtImpact.debtRatioAfter);
+    final pointsDelta = ((debtImpact.debtRatioAfter - debtImpact.debtRatioBefore) * 100).round();
+    final remainingDeltaEuros = (debtImpact.remainingDeltaCents / 100).round();
     return _SectionCard(
-      title: 'Sécurité après projet',
+      title: 'Impact sur le budget',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SituationRow('Reste à vivre actuel', formatCentsAsEuro(safety.remainingBeforeCents)),
-          _SituationRow('Reste à vivre après projet', formatCentsAsEuro(safety.remainingAfterCents)),
-          _SituationRow(
-            'Taux d\'endettement actuel',
-            '${(safety.debtRatioBefore * 100).round()} %',
-          ),
-          _SituationRow(
-            'Taux après projet ${debtRatioBandEmoji(debtBand)}',
-            '${(safety.debtRatioAfter * 100).round()} %',
-          ),
-          _SituationRow(
-              'Marge consommée par le projet', '${formatCentsAsEuro(safety.marginConsumedByProjectCents)}/mois'),
+          Text('Situation actuelle', style: Theme.of(context).textTheme.labelLarge),
           const SizedBox(height: AppSpacing.xs),
-          Row(
-            children: [
-              Text('Score sécurité', style: Theme.of(context).textTheme.bodyMedium),
-              const Spacer(),
-              Text(
-                '${safety.totalScore}% ${financialSafetyLevelEmoji(safety.level)}',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color, fontWeight: FontWeight.w700),
-              ),
-            ],
+          _SituationRow('Taux d\'endettement', '${(debtImpact.debtRatioBefore * 100).round()} %'),
+          _SituationRow('Reste à vivre', '${formatCentsAsEuro(debtImpact.remainingBeforeCents)}/mois'),
+          const SizedBox(height: AppSpacing.md),
+          Text('Avec le projet', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: AppSpacing.xs),
+          _SituationRow(
+            'Taux d\'endettement ${debtRatioBandEmoji(debtBandAfter)}',
+            '${(debtImpact.debtRatioAfter * 100).round()} %',
+          ),
+          _SituationRow('Reste à vivre', '${formatCentsAsEuro(debtImpact.remainingAfterCents)}/mois'),
+          _SituationRow(
+              'Marge consommée par le projet', '${formatCentsAsEuro(debtImpact.marginConsumedByProjectCents)}/mois'),
+          const SizedBox(height: AppSpacing.md),
+          Text('Variation', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '${pointsDelta >= 0 ? '+' : ''}$pointsDelta points d\'endettement',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          Text(
+            '${remainingDeltaEuros >= 0 ? '+' : ''}$remainingDeltaEuros €/mois de reste à vivre',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.sm),
-          Text(safety.alertMessage, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: AppSpacing.xs),
           Text(
             'Repères de taux d\'endettement internes à BudgetPilot — jamais une règle d\'acceptation bancaire.',
             style:
@@ -567,8 +609,9 @@ class _OtherScenariosSection extends StatelessWidget {
   }
 }
 
-/// Faisabilité / Sécurité / Endettement / Reste à vivre pour un scénario
-/// (§8 V1.1) — jamais uniquement le score de faisabilité.
+/// Faisabilité / Endettement / Reste à vivre, avant → après, pour un
+/// scénario (§8 V1.1/V1.2) — indicateurs concrets uniquement, jamais un
+/// pourcentage de "sécurité" agrégé.
 class _ScenarioMetricsGrid extends StatelessWidget {
   final ProjectScenario scenario;
   const _ScenarioMetricsGrid({required this.scenario});
@@ -581,9 +624,16 @@ class _ScenarioMetricsGrid extends StatelessWidget {
       runSpacing: AppSpacing.xs,
       children: [
         _metric(context, 'Faisabilité', '${scenario.baselineScore}% → ${scenario.newScore}%'),
-        _metric(context, 'Sécurité', '${scenario.baselineSafetyScore}% → ${scenario.newSafetyScore}%'),
-        _metric(context, 'Endettement', '${(scenario.newDebtRatioAfter * 100).round()} %'),
-        _metric(context, 'Reste à vivre', formatCentsAsEuro(scenario.newRemainingAfterCents)),
+        _metric(
+          context,
+          'Endettement',
+          '${(scenario.baselineDebtRatioAfter * 100).round()}% → ${(scenario.newDebtRatioAfter * 100).round()}%',
+        ),
+        _metric(
+          context,
+          'Reste à vivre',
+          '${formatCentsAsEuro(scenario.baselineRemainingAfterCents)} → ${formatCentsAsEuro(scenario.newRemainingAfterCents)}/mois',
+        ),
       ].map((w) => DefaultTextStyle.merge(style: TextStyle(color: colorScheme.onSurfaceVariant), child: w)).toList(),
     );
   }

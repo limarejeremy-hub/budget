@@ -88,6 +88,33 @@ void main() {
     expect(find.text('À financer'), findsOneWidget);
   });
 
+  testWidgets('affiche le taux d\'endettement et le reste à vivre concrets, plus jamais un score de "sécurité" (V1.2)',
+      (tester) async {
+    useTallViewport(tester);
+    await seedCycleAndIncome();
+    final id = await repository.createProject(
+      name: 'Porsche Boxster',
+      category: ProjectCategory.car,
+      targetAmountCents: 4000000,
+      availableContributionCents: 800000,
+      financingMode: ProjectFinancingMode.mixed,
+      desiredDurationMonths: 60,
+      estimatedRatePercent: 4.0,
+    );
+
+    await tester.pumpWidget(wrap(id));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Endettement après projet'), findsOneWidget);
+    expect(find.textContaining('Reste à vivre après projet'), findsWidgets);
+    expect(find.text('Impact sur le budget'), findsOneWidget);
+    expect(find.text('Situation actuelle'), findsOneWidget);
+    expect(find.text('Avec le projet'), findsOneWidget);
+    expect(find.text('Variation'), findsOneWidget);
+    expect(find.textContaining('Sécurité'), findsNothing);
+  });
+
   testWidgets('affiche "Ce qui va s\'améliorer" quand un crédit se termine bientôt', (tester) async {
     useTallViewport(tester);
     await seedCycleAndIncome(incomeCents: 250000);
@@ -211,6 +238,10 @@ void main() {
 
     await tester.tap(find.text('Simuler'));
     await tester.pumpAndSettle();
+
+    expect(find.text('Endettement'), findsWidgets);
+    expect(find.text('Reste à vivre'), findsWidgets);
+    expect(find.textContaining('Sécurité'), findsNothing);
 
     await tester.enterText(find.widgetWithText(TextFormField, 'Apport disponible (facultatif)'), '1200');
     await tester.pump();

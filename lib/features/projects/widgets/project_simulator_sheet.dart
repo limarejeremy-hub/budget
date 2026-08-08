@@ -5,19 +5,20 @@ import '../../../core/formatting/currency_formatter.dart';
 import '../../../core/providers/dashboard_providers.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../../core/widgets/euro_amount_field.dart';
+import '../../../domain/calculations/debt_ratio_bands.dart';
 import '../../../domain/calculations/project_health_service.dart';
-import '../../../domain/calculations/project_safety_service.dart';
 import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/project_entity.dart';
 import '../project_visuals.dart';
 
 const _healthService = ProjectHealthService();
 
-/// Simulateur interactif (§15 V1.0, enrichi §14 V1.1) : teste un apport ou
-/// un prix cible différent et affiche immédiatement AVANT → APRÈS pour les
-/// quatre indicateurs (faisabilité, sécurité, endettement, reste à vivre) —
-/// sans jamais modifier les vraies données tant que l'utilisateur n'a pas
-/// explicitement choisi "Enregistrer cet apport".
+/// Simulateur interactif (§15 V1.0, enrichi §14 V1.1/V1.2) : teste un apport
+/// ou un prix cible différent et affiche immédiatement AVANT → APRÈS pour
+/// les indicateurs concrets (faisabilité, endettement, reste à vivre) —
+/// jamais un pourcentage de "sécurité" calculé, sans jamais modifier les
+/// vraies données tant que l'utilisateur n'a pas explicitement choisi
+/// "Enregistrer cet apport".
 Future<void> showProjectSimulatorSheet(
   BuildContext context, {
   required ProjectEntity project,
@@ -209,22 +210,16 @@ class _SimulationResultCard extends StatelessWidget {
             afterColor: feasibilityLevelColor(simulated.feasibility.level),
           ),
           _MetricRow(
-            label: 'Sécurité',
-            before: '${baseline.safety.totalScore}%',
-            after: '${simulated.safety.totalScore}%',
-            afterColor: financialSafetyLevelColor(simulated.safety.level),
-          ),
-          _MetricRow(
             label: 'Endettement',
-            before: '${(baseline.safety.debtRatioAfter * 100).round()} %',
-            after: '${(simulated.safety.debtRatioAfter * 100).round()} %',
-            afterColor: debtRatioBandColor(debtRatioBandFor(simulated.safety.debtRatioAfter)),
+            before: '${(baseline.debtImpact.debtRatioAfter * 100).round()} %',
+            after: '${(simulated.debtImpact.debtRatioAfter * 100).round()} %',
+            afterColor: debtRatioBandColor(debtRatioBandFor(simulated.debtImpact.debtRatioAfter)),
           ),
           _MetricRow(
             label: 'Reste à vivre',
-            before: formatCentsAsEuro(baseline.safety.remainingAfterCents),
-            after: formatCentsAsEuro(simulated.safety.remainingAfterCents),
-            afterColor: financialSafetyLevelColor(simulated.safety.level),
+            before: formatCentsAsEuro(baseline.debtImpact.remainingAfterCents),
+            after: formatCentsAsEuro(simulated.debtImpact.remainingAfterCents),
+            afterColor: debtRatioBandColor(debtRatioBandFor(simulated.debtImpact.debtRatioAfter)),
             isLast: true,
           ),
         ],
