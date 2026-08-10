@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:budgetpilot/core/formatting/currency_formatter.dart';
 import 'package:budgetpilot/core/providers/dashboard_providers.dart';
 import 'package:budgetpilot/core/providers/database_provider.dart';
+import 'package:budgetpilot/core/theme/design_tokens.dart';
 import 'package:budgetpilot/data/local/database.dart';
 import 'package:budgetpilot/domain/models/dashboard_view_data.dart';
 import 'package:budgetpilot/features/dashboard/dashboard_page.dart';
@@ -62,8 +63,7 @@ void main() {
     expect(find.text('Créer mon premier cycle'), findsOneWidget);
   });
 
-  testWidgets('affiche ARGENT LIBRE, le montant et la section Prochaines échéances',
-      (tester) async {
+  testWidgets('affiche ARGENT LIBRE, le montant et la section Prochaines échéances', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -81,6 +81,50 @@ void main() {
     expect(find.textContaining(formatCentsAsEuro(data.realRemainingCents)), findsOneWidget);
     expect(find.textContaining('Prochaines échéances'), findsOneWidget);
     expect(find.textContaining('Solde bancaire déclaré'), findsOneWidget);
+  });
+
+  testWidgets(
+      'un solde bancaire négatif est affiché avec son signe et une couleur d\'alerte discrète, '
+      'sans jamais modifier Argent Libre', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final data = _sampleData(declaredBalance: -18000);
+
+    await tester.pumpWidget(_wrap(
+      const DashboardPage(),
+      [dashboardProvider.overrideWith((ref) => Stream.value(data))],
+    ));
+    await tester.pump();
+
+    // L'Argent Libre reste calculé indépendamment du solde déclaré.
+    expect(find.textContaining(formatCentsAsEuro(data.realRemainingCents)), findsOneWidget);
+
+    final label = 'Solde bancaire déclaré : ${formatCentsAsEuro(-18000)}';
+    expect(find.text(label), findsOneWidget);
+    final text = tester.widget<Text>(find.text(label));
+    expect(text.style?.color, CategoryColors.fixedExpense);
+  });
+
+  testWidgets('un solde bancaire positif garde la couleur neutre habituelle', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final data = _sampleData(declaredBalance: 25000);
+
+    await tester.pumpWidget(_wrap(
+      const DashboardPage(),
+      [dashboardProvider.overrideWith((ref) => Stream.value(data))],
+    ));
+    await tester.pump();
+
+    final label = 'Solde bancaire déclaré : ${formatCentsAsEuro(25000)}';
+    final text = tester.widget<Text>(find.text(label));
+    expect(text.style?.color, isNot(CategoryColors.fixedExpense));
   });
 
   testWidgets("affiche un état d'erreur si le flux échoue", (tester) async {

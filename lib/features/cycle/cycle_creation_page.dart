@@ -105,6 +105,7 @@ class _CycleCreationPageState extends ConsumerState<CycleCreationPage> {
                 controller: _balanceController,
                 label: 'Solde bancaire déclaré',
                 required: false,
+                allowNegative: true,
               ),
               const SizedBox(height: 24),
               FormActionsRow(

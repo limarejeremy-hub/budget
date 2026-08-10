@@ -666,15 +666,19 @@ class _DeclaredBalanceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Couleur d'alerte discrète (le même orange que les charges, jamais le
+    // rouge réservé aux cas réellement problématiques) quand le solde
+    // déclaré est à découvert — information distincte de l'Argent libre.
+    final color = cents < 0 ? CategoryColors.fixedExpense : colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          Icon(Icons.account_balance_outlined, size: 16, color: colorScheme.onSurfaceVariant),
+          Icon(Icons.account_balance_outlined, size: 16, color: color),
           const SizedBox(width: 8),
           Text(
             'Solde bancaire déclaré : ${formatCentsAsEuro(cents)}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
           ),
         ],
       ),
