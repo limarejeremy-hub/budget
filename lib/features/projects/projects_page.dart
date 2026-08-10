@@ -11,6 +11,7 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/staggered_fade_in.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
 import '../../domain/calculations/debt_ratio_bands.dart';
+import '../../domain/calculations/household_finance_service.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
 import '../../domain/calculations/project_health_service.dart';
 import '../../domain/entities/credit_entity.dart';
@@ -21,6 +22,7 @@ import 'project_visuals.dart';
 
 const _healthService = ProjectHealthService();
 const _creditCalculationService = CreditCalculationService();
+const _householdFinanceService = HouseholdFinanceService();
 
 /// Page "Projets" (V1.0 — Project Planner, §13 ; multi-projets et double
 /// score V1.1, §1/§12) : "puis-je réellement réaliser ce projet ?" pour
@@ -44,9 +46,17 @@ class ProjectsPage extends ConsumerWidget {
           data: (projects) {
             if (projects.isEmpty) return const _EmptyProjects();
 
-            final currentFreeCashCents = dashboardAsync.valueOrNull?.realRemainingCents ?? 0;
-            final totalIncomeCents = dashboardAsync.valueOrNull?.totalIncomeCents ?? 0;
+            final dashboard = dashboardAsync.valueOrNull;
+            final totalIncomeCents = dashboard?.totalIncomeCents ?? 0;
             final activeCredits = _creditCalculationService.activeOnly(creditsAsync.valueOrNull ?? const []);
+            // Reste à vivre STRUCTUREL (jamais l'argent libre du cycle) : le
+            // Project Planner mesure la capacité financière récurrente du
+            // foyer, pas ce qui a déjà été dépensé ce mois-ci.
+            final currentFreeCashCents = _householdFinanceService.structuralRemainingCents(
+              totalIncomeCents: totalIncomeCents,
+              totalFixedExpensesExcludingCreditsCents: dashboard?.totalFixedExpensesExcludingCreditsCents ?? 0,
+              activeCredits: activeCredits,
+            );
             final active = projects.where((p) => p.isActive).toList()
               ..sort((a, b) => ProjectPriority.rank(a.priority).compareTo(ProjectPriority.rank(b.priority)));
             final archived = projects.where((p) => !p.isActive).toList();

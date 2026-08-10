@@ -256,9 +256,11 @@ class ProjectFeasibilityService {
   }
 
   /// Évalue la faisabilité complète d'un projet à partir de la situation
-  /// financière courante — argent libre (déjà calculé par
-  /// `BudgetCalculationService`/`DashboardViewBuilder`, jamais recalculé
-  /// ici) et crédits actifs (déjà chargés via `CycleRepository`).
+  /// financière courante — [currentFreeCashCents] est le RESTE À VIVRE
+  /// STRUCTUREL (déjà calculé par `HouseholdFinanceService.
+  /// structuralRemainingCents`, jamais recalculé ici), pas l'argent libre du
+  /// cycle : il ne dépend jamais des dépenses variables ni de l'épargne —
+  /// et crédits actifs (déjà chargés via `CycleRepository`).
   ProjectFeasibilityResult evaluate({
     required ProjectEntity project,
     required int currentFreeCashCents,

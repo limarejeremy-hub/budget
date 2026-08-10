@@ -268,4 +268,67 @@ void main() {
       expect(options.single.remainingCapitalAfterCents, immobilier.remainingCapitalCents - 500000);
     });
   });
+
+  group('simulateCreditPaymentIncrease (V1.2, §2)', () {
+    // Mensualité actuelle 275 €/mois, capital restant 10 000 €, 40
+    // mensualités restantes, taux 3 % — mensualité testée : 400 €/mois.
+    final credit = _credit(
+      id: 4,
+      name: 'Prêt personnel',
+      remainingCapitalCents: 1000000,
+      monthlyPaymentCents: 27500,
+      annualRatePercent: 3.0,
+      expectedEndDate: DateTime(2029, 6, 1),
+      remainingInstallments: 40,
+    );
+
+    test('calcule la nouvelle durée estimée (capital / nouvelle mensualité, arrondi au mois supérieur)', () {
+      final result = simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 40000);
+      // 1 000 000 / 40 000 = 25 mensualités exactement.
+      expect(result.simulatedRemainingInstallments, 25);
+    });
+
+    test('calcule le nombre de mois gagnés (durée actuelle - durée simulée)', () {
+      final result = simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 40000);
+      expect(result.monthsSaved, 40 - 25);
+    });
+
+    test('calcule la nouvelle date de fin en retirant les mois gagnés à la date actuelle', () {
+      final result = simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 40000);
+      expect(result.simulatedEndDate, DateTime(2028, 3, 1));
+    });
+
+    test('calcule les intérêts économisés quand le taux est connu', () {
+      final result = simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 40000);
+      // Total payé actuel : 27500 * 40 = 1 100 000. Total payé simulé :
+      // 40000 * 25 = 1 000 000. Économie : 100 000 (1000 €).
+      expect(result.estimatedInterestSavedCents, 100000);
+    });
+
+    test('n\'invente jamais d\'intérêts économisés si le taux est absent', () {
+      final result = simulateCreditPaymentIncrease(credit: montre, simulatedMonthlyPaymentCents: 8000);
+      expect(result.estimatedInterestSavedCents, isNull);
+    });
+
+    test('une mensualité réduite donne un nombre de mois gagnés négatif, jamais masqué', () {
+      final result = simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 20000);
+      // 1 000 000 / 20 000 = 50 mensualités -> 40 - 50 = -10 mois "gagnés".
+      expect(result.simulatedRemainingInstallments, 50);
+      expect(result.monthsSaved, -10);
+    });
+
+    test('la simulation ne modifie jamais le crédit reçu en entrée (aucune persistance)', () {
+      simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 40000);
+      expect(credit.monthlyPaymentCents, 27500);
+      expect(credit.remainingInstallments, 40);
+    });
+
+    test('expose la mensualité actuelle et simulée telles quelles pour l\'affichage', () {
+      final result = simulateCreditPaymentIncrease(credit: credit, simulatedMonthlyPaymentCents: 40000);
+      expect(result.currentMonthlyPaymentCents, 27500);
+      expect(result.simulatedMonthlyPaymentCents, 40000);
+      expect(result.remainingCapitalCents, 1000000);
+      expect(result.currentRemainingInstallments, 40);
+    });
+  });
 }

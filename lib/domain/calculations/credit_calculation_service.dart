@@ -184,6 +184,79 @@ CreditPrepaymentSimulation simulateCreditPrepayment({
   );
 }
 
+/// Résultat d'une simulation de changement de mensualité (V1.2, §2) — teste
+/// une nouvelle mensualité (plus élevée le plus souvent, mais fonctionne
+/// aussi pour une baisse) sans jamais modifier les vraies données tant que
+/// l'utilisateur ne choisit pas explicitement "Appliquer cette nouvelle
+/// mensualité".
+class CreditPaymentIncreaseSimulation {
+  final int currentMonthlyPaymentCents;
+  final int simulatedMonthlyPaymentCents;
+  final int remainingCapitalCents;
+  final int currentRemainingInstallments;
+  final int simulatedRemainingInstallments;
+
+  /// Mensualités gagnées (positif = crédit soldé plus tôt, négatif = plus
+  /// tard) — jamais borné à 0, une mensualité réduite doit pouvoir afficher
+  /// un nombre de mois négatif plutôt que d'être masquée.
+  final int monthsSaved;
+  final DateTime simulatedEndDate;
+
+  /// Estimation simplifiée des intérêts économisés (différence entre le
+  /// total payé dans chaque scénario, mensualité × mensualités restantes,
+  /// moins le capital restant identique dans les deux cas) — `null` si le
+  /// taux du crédit n'est pas renseigné : BudgetPilot n'invente jamais un
+  /// coût d'emprunt à partir d'un taux inconnu.
+  final int? estimatedInterestSavedCents;
+
+  const CreditPaymentIncreaseSimulation({
+    required this.currentMonthlyPaymentCents,
+    required this.simulatedMonthlyPaymentCents,
+    required this.remainingCapitalCents,
+    required this.currentRemainingInstallments,
+    required this.simulatedRemainingInstallments,
+    required this.monthsSaved,
+    required this.simulatedEndDate,
+    this.estimatedInterestSavedCents,
+  });
+}
+
+/// Simule l'effet d'une nouvelle mensualité de [simulatedMonthlyPaymentCents]
+/// pour [credit] : nouvelle durée, nouvelle date de fin, mois gagnés, et
+/// intérêts économisés si le taux est connu. Estimation volontairement
+/// simplifiée (comme [simulateCreditPrepayment]) : elle suppose une
+/// mensualité constante jusqu'au solde du crédit, hors assurance et hors
+/// renégociation de taux.
+CreditPaymentIncreaseSimulation simulateCreditPaymentIncrease({
+  required CreditEntity credit,
+  required int simulatedMonthlyPaymentCents,
+}) {
+  final capital = credit.remainingCapitalCents;
+  final simulatedInstallments =
+      simulatedMonthlyPaymentCents > 0 ? (capital / simulatedMonthlyPaymentCents).ceil() : credit.remainingInstallments;
+  final monthsSaved = credit.remainingInstallments - simulatedInstallments;
+  final simulatedEndDate = _subtractMonths(credit.expectedEndDate, monthsSaved);
+
+  final rate = credit.annualRatePercent;
+  int? interestSaved;
+  if (rate != null) {
+    final totalPaidCurrent = credit.monthlyPaymentCents * credit.remainingInstallments;
+    final totalPaidSimulated = simulatedMonthlyPaymentCents * simulatedInstallments;
+    interestSaved = totalPaidCurrent - totalPaidSimulated;
+  }
+
+  return CreditPaymentIncreaseSimulation(
+    currentMonthlyPaymentCents: credit.monthlyPaymentCents,
+    simulatedMonthlyPaymentCents: simulatedMonthlyPaymentCents,
+    remainingCapitalCents: capital,
+    currentRemainingInstallments: credit.remainingInstallments,
+    simulatedRemainingInstallments: simulatedInstallments,
+    monthsSaved: monthsSaved,
+    simulatedEndDate: simulatedEndDate,
+    estimatedInterestSavedCents: interestSaved,
+  );
+}
+
 /// Une option de remboursement parmi plusieurs, proposée par le simulateur
 /// multi-crédits : "et si ce versement était appliqué à CE crédit-là ?"
 /// Toujours une estimation simplifiée (voir [CreditPrepaymentSimulation]).

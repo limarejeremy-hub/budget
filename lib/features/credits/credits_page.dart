@@ -9,6 +9,7 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/staggered_fade_in.dart';
 import '../../data/local/converters/entity_mappers.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
+import '../../domain/calculations/household_finance_service.dart';
 import '../../domain/entities/credit_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import '../entries/fixed_expense_form_page.dart';
@@ -18,6 +19,7 @@ import 'credit_visuals.dart';
 import 'widgets/credit_repayment_simulator_sheet.dart';
 
 const _creditCalculationService = CreditCalculationService();
+const _householdFinanceService = HouseholdFinanceService();
 
 enum _SortMode { none, lowestCapital, highestRate, highestPayment }
 
@@ -208,14 +210,16 @@ class _EmptyCredits extends StatelessWidget {
 }
 
 /// Bloc récapitulatif principal de la page Crédits — inclut le taux
-/// d'endettement et le reste à vivre actuels (V1.2), calculés avec LA seule
-/// formule partagée par toute l'application (`CreditCalculationService.
-/// debtRatio` ; le reste à vivre est directement l'argent libre déjà
-/// calculé par `BudgetCalculationService`, jamais recalculé ici). Les
-/// mensualités de crédits liés à une charge fixe ne sont comptées qu'une
-/// seule fois : `credits` porte la mensualité, la charge fixe liée n'est
-/// qu'un affichage de cette même mensualité dans le cycle, jamais une
-/// deuxième saisie.
+/// d'endettement et le reste à vivre STRUCTUREL actuels (V1.2), calculés
+/// avec LES seules formules partagées par toute l'application
+/// (`CreditCalculationService.debtRatio` et `HouseholdFinanceService.
+/// structuralRemainingCents`, jamais recalculées ici ni ailleurs — mêmes
+/// formules qu'au Project Planner). Le reste à vivre affiché ici n'est
+/// jamais l'argent libre du cycle : il ne dépend jamais des dépenses
+/// variables ni de l'épargne. Les mensualités de crédits liés à une charge
+/// fixe ne sont comptées qu'une seule fois : `credits` porte la mensualité,
+/// la charge fixe liée n'est qu'un affichage de cette même mensualité dans
+/// le cycle, jamais une deuxième saisie.
 class _CreditsSummaryHeader extends StatelessWidget {
   final List<CreditEntity> credits;
   final DashboardViewData? dashboard;
@@ -232,7 +236,14 @@ class _CreditsSummaryHeader extends StatelessWidget {
     final debtRatio = income == null
         ? null
         : _creditCalculationService.debtRatio(activeCredits: activeCredits, totalIncomeCents: income);
-    final remaining = dashboard?.realRemainingCents;
+    final currentDashboard = dashboard;
+    final remaining = currentDashboard == null
+        ? null
+        : _householdFinanceService.structuralRemainingCents(
+            totalIncomeCents: currentDashboard.totalIncomeCents,
+            totalFixedExpensesExcludingCreditsCents: currentDashboard.totalFixedExpensesExcludingCreditsCents,
+            activeCredits: activeCredits,
+          );
 
     return Card(
       child: Padding(

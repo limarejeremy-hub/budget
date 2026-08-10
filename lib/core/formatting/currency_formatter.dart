@@ -15,6 +15,16 @@ String formatDayMonthFr(DateTime date) => DateFormat('d MMMM y', 'fr_FR').format
 /// anticipé), sans jamais perdre l'année.
 String formatMonthYearFr(DateTime date) => DateFormat('MMMM y', 'fr_FR').format(date);
 
+/// Formate un ratio (0.125 => "12,5 %") en pourcentage fr-FR, avec au
+/// maximum une décimale — jamais ",0 %" pour un ratio rond ("31 %", pas
+/// "31,0 %").
+String formatRatioAsPercent(double ratio) {
+  final rounded = (ratio * 1000).round() / 10; // pourcentage, 1 décimale max
+  final isWhole = rounded == rounded.roundToDouble();
+  final text = isWhole ? rounded.round().toString() : rounded.toStringAsFixed(1).replaceAll('.', ',');
+  return '$text %';
+}
+
 /// Formate une durée en mois en "X ans et Y mois" (fr-FR), en omettant la
 /// partie nulle ("2 ans", "5 mois", "2 ans et 5 mois"). `0` donne "0 mois".
 String formatDurationYearsMonths(int totalMonths) {

@@ -20,10 +20,15 @@ const double kMaxHealthyRemainingDropRatio = 0.50;
 class ProjectDebtImpactResult {
   final int currentIncomeCents;
 
-  /// Reste à vivre actuel (avant ce projet) — c'est l'argent libre déjà
-  /// calculé par `BudgetCalculationService`/`DashboardViewBuilder`, jamais
-  /// recalculé ici : les mensualités de crédit y sont déjà déduites une
-  /// seule fois (charges fixes liées), pas de double comptage.
+  /// Reste à vivre STRUCTUREL actuel (avant ce projet) — calculé par
+  /// `HouseholdFinanceService.structuralRemainingCents`, jamais recalculé
+  /// ici : revenus - charges fixes hors crédits - mensualités de crédits
+  /// actifs. Ne dépend jamais des dépenses variables ni de l'épargne du
+  /// cycle, et ne compte jamais deux fois une mensualité de crédit (déduite
+  /// une seule fois, jamais aussi via sa charge fixe liée). Distinct de
+  /// l'argent libre du cycle (`BudgetCalculationService.
+  /// calculateRealRemaining`), qui lui intègre solde de départ, dépenses
+  /// variables et épargne — jamais utilisé ici.
   final int remainingBeforeCents;
 
   /// Reste à vivre estimé une fois ce projet intégré au budget.

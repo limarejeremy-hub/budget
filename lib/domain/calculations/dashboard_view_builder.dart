@@ -28,6 +28,10 @@ class DashboardViewBuilder {
   }) {
     final totalIncome = _calculationService.calculateTotalExpectedIncome(incomes);
     final totalFixed = _calculationService.calculateTotalFixedExpenses(fixedExpenses);
+    // Reste à vivre structurel (HouseholdFinanceService) : exclut les
+    // charges déjà comptées via la mensualité de leur crédit lié.
+    final totalFixedExcludingCredits =
+        _calculationService.calculateTotalFixedExpenses(fixedExpenses.where((e) => !e.isLinkedToCredit).toList());
     final totalVariable = _calculationService.calculateTotalVariableExpenses(variableExpenses);
     final totalSavings = _calculationService.calculateTotalSavings(savings);
 
@@ -83,6 +87,7 @@ class DashboardViewBuilder {
       cycleEnd: cycleEnd,
       totalIncomeCents: totalIncome,
       totalFixedExpensesCents: totalFixed,
+      totalFixedExpensesExcludingCreditsCents: totalFixedExcludingCredits,
       totalVariableExpensesCents: totalVariable,
       totalSavingsCents: totalSavings,
       realRemainingCents: realRemaining,

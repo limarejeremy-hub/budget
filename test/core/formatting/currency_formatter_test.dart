@@ -21,6 +21,21 @@ void main() {
     });
   });
 
+  group('formatRatioAsPercent', () {
+    test('affiche une décimale quand nécessaire', () {
+      expect(formatRatioAsPercent(0.125), '12,5 %');
+    });
+
+    test('omet la décimale pour un pourcentage rond', () {
+      expect(formatRatioAsPercent(0.31), '31 %');
+      expect(formatRatioAsPercent(0.0), '0 %');
+    });
+
+    test('arrondit au dixième de pourcent le plus proche', () {
+      expect(formatRatioAsPercent(0.12345), '12,3 %');
+    });
+  });
+
   group('formatDurationYearsMonths', () {
     test('0 mois', () {
       expect(formatDurationYearsMonths(0), '0 mois');

@@ -31,6 +31,7 @@ import '../projects/widgets/project_priority_card.dart';
 import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
 import 'widgets/cycle_progress_bar.dart';
+import 'widgets/indicators_section.dart';
 import 'widgets/this_week_section.dart';
 import 'widgets/today_section.dart';
 
@@ -147,6 +148,8 @@ class _DashboardContent extends StatelessWidget {
             Text('Résumé du cycle', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.md),
             _CycleSummaryGrid(data: data),
+            const SizedBox(height: AppSpacing.xl),
+            const IndicatorsSection(),
             const SizedBox(height: AppSpacing.xl),
             const CreditsSummaryCard(),
             const SizedBox(height: AppSpacing.lg),

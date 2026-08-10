@@ -9,6 +9,13 @@ class DashboardViewData {
   final DateTime cycleEnd;
   final int totalIncomeCents;
   final int totalFixedExpensesCents;
+
+  /// Charges fixes hors mensualités de crédit — exclut les charges liées à
+  /// un crédit actif (`FixedExpenseEntity.isLinkedToCredit`), déjà comptées
+  /// via sa mensualité (`CreditCalculationService.totalMonthlyPayments`).
+  /// Sert au RESTE À VIVRE STRUCTUREL (`HouseholdFinanceService`), jamais à
+  /// l'argent libre du cycle qui utilise [totalFixedExpensesCents].
+  final int totalFixedExpensesExcludingCreditsCents;
   final int totalVariableExpensesCents;
   final int totalSavingsCents;
   final int realRemainingCents;
@@ -55,6 +62,7 @@ class DashboardViewData {
     required this.cycleEnd,
     required this.totalIncomeCents,
     required this.totalFixedExpensesCents,
+    this.totalFixedExpensesExcludingCreditsCents = 0,
     required this.totalVariableExpensesCents,
     required this.totalSavingsCents,
     required this.realRemainingCents,

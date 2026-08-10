@@ -211,11 +211,49 @@ void main() {
     expect(result.declaredBankBalanceCents, isNull);
   });
 
-  test('Project Planner : realRemainingCents (source de currentFreeCashCents) reflète le solde de départ', () {
-    // projects_page.dart lit `dashboard.realRemainingCents` directement comme
-    // `currentFreeCashCents` pour le Project Planner — aucune formule séparée
-    // n'existe côté simulateur/scénarios/faisabilité : ce test documente que
-    // la valeur qu'ils consomment est déjà corrigée par la formule centrale.
+  test('totalFixedExpensesExcludingCreditsCents exclut les charges liées à un crédit (V1.2, reste à vivre structurel)',
+      () {
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      incomes: const [],
+      fixedExpenses: [
+        FixedExpenseEntity(id: 1, cycleId: 1, name: 'Loyer', expectedAmountCents: 90000, expectedDate: cycleStart),
+        FixedExpenseEntity(
+          id: 2,
+          cycleId: 1,
+          name: 'Mensualité voiture',
+          expectedAmountCents: 25000,
+          expectedDate: cycleStart,
+          linkedCreditId: 7,
+        ),
+      ],
+      variableExpenses: const [],
+      savings: const [],
+    );
+
+    // totalFixedExpensesCents (argent libre) inclut toujours tout.
+    expect(result.totalFixedExpensesCents, 90000 + 25000);
+    // totalFixedExpensesExcludingCreditsCents (reste à vivre structurel)
+    // exclut la charge liée au crédit — sa mensualité est comptée via
+    // CreditCalculationService.totalMonthlyPayments côté HouseholdFinanceService,
+    // jamais deux fois.
+    expect(result.totalFixedExpensesExcludingCreditsCents, 90000);
+  });
+
+  test(
+      'realRemainingCents (Argent libre du cycle) reste intégré au solde de départ — mais n\'est PLUS la source du '
+      'Project Planner (V1.2)', () {
+    // Depuis le correctif V1.2, projects_page.dart / project_detail_page.dart
+    // / project_priority_card.dart / credits_page.dart ne lisent plus
+    // `dashboard.realRemainingCents` pour le Project Planner ou le Credit
+    // Manager : ils calculent `HouseholdFinanceService.
+    // structuralRemainingCents` à partir de `totalIncomeCents` et
+    // `totalFixedExpensesExcludingCreditsCents` (voir
+    // household_finance_service_test.dart). realRemainingCents continue
+    // d'intégrer le solde de départ, mais uniquement pour l'Argent libre du
+    // cycle affiché au tableau de bord / détail du cycle.
     final result = builder.build(
       cycleId: 1,
       cycleStart: cycleStart,
@@ -229,7 +267,6 @@ void main() {
       declaredBankBalanceCents: 50000,
     );
 
-    final currentFreeCashCents = result.realRemainingCents;
-    expect(currentFreeCashCents, 450000);
+    expect(result.realRemainingCents, 450000);
   });
 }

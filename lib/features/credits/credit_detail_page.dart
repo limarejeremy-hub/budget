@@ -3,17 +3,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/formatting/currency_formatter.dart';
+import '../../core/providers/credits_providers.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/routing/app_page_route.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../core/widgets/euro_amount_field.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
+import '../../domain/calculations/debt_ratio_bands.dart';
+import '../../domain/calculations/household_finance_service.dart';
+import '../../domain/calculations/project_debt_impact_service.dart' show kMaxHealthyRemainingDropRatio;
 import '../../domain/entities/credit_entity.dart';
 import 'credit_form_page.dart';
 import 'credit_visuals.dart';
 
 const _creditCalculationService = CreditCalculationService();
+const _householdFinanceService = HouseholdFinanceService();
 
 /// Détail d'un crédit : toutes ses informations, simulation de versement
 /// exceptionnel, et actions (modifier, marquer comme terminé / réactiver,
@@ -31,9 +37,14 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
   CreditPrepaymentSimulation? _simulation;
   int? _simulatedExtraCents;
 
+  final _newMonthlyPaymentController = TextEditingController();
+  CreditPaymentIncreaseSimulation? _paymentIncreaseSimulation;
+  bool _applyingNewPayment = false;
+
   @override
   void dispose() {
     _extraPaymentController.dispose();
+    _newMonthlyPaymentController.dispose();
     super.dispose();
   }
 
@@ -52,6 +63,56 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
     });
   }
 
+  void _runPaymentIncreaseSimulation() {
+    final cents = EuroAmountField.parseCents(_newMonthlyPaymentController.text);
+    if (cents == null || cents <= 0) {
+      setState(() => _paymentIncreaseSimulation = null);
+      return;
+    }
+    setState(() {
+      _paymentIncreaseSimulation = simulateCreditPaymentIncrease(
+        credit: widget.credit,
+        simulatedMonthlyPaymentCents: cents,
+      );
+    });
+  }
+
+  /// Applique la nouvelle mensualité simulée : met à jour le crédit (qui
+  /// synchronise automatiquement la charge fixe liée du cycle en cours,
+  /// cf. `CycleRepository.updateCredit`) — notifications, Project Planner
+  /// et taux d'endettement se recalculent ensuite d'eux-mêmes via les flux
+  /// Riverpod existants, sans action supplémentaire ici.
+  Future<void> _applyNewMonthlyPayment(int newMonthlyPaymentCents) async {
+    final credit = widget.credit;
+    setState(() => _applyingNewPayment = true);
+    try {
+      final repository = ref.read(cycleRepositoryProvider);
+      await repository.updateCredit(
+        id: credit.id,
+        name: credit.name,
+        initialAmountCents: credit.initialAmountCents,
+        remainingCapitalCents: credit.remainingCapitalCents,
+        monthlyPaymentCents: newMonthlyPaymentCents,
+        annualRatePercent: credit.annualRatePercent,
+        startDate: credit.startDate,
+        expectedEndDate: credit.expectedEndDate,
+        remainingInstallments: credit.remainingInstallments,
+        creditType: credit.creditType,
+        earlyRepaymentAllowed: credit.earlyRepaymentAllowed,
+        earlyRepaymentPenaltyCents: credit.earlyRepaymentPenaltyCents,
+        notes: credit.notes,
+        organisme: credit.organisme,
+        colorValue: credit.colorValue,
+        iconCodePoint: credit.iconCodePoint,
+        paymentDayOfMonth: credit.paymentDayOfMonth,
+        insuranceCents: credit.insuranceCents,
+      );
+      if (mounted) Navigator.of(context).pop();
+    } finally {
+      if (mounted) setState(() => _applyingNewPayment = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final credit = widget.credit;
@@ -65,6 +126,12 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
     final paceColor = creditPaceColor(pace);
     final paceEmoji = creditPaceEmoji(pace);
 
+    final dashboard = ref.watch(dashboardProvider).valueOrNull;
+    final allCredits = ref.watch(creditsProvider).valueOrNull ?? const <CreditEntity>[];
+    final activeCredits = _creditCalculationService.activeOnly(allCredits);
+    final totalIncomeCents = dashboard?.totalIncomeCents ?? 0;
+    final totalFixedExpensesExcludingCreditsCents = dashboard?.totalFixedExpensesExcludingCreditsCents ?? 0;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(credit.name),
@@ -72,8 +139,7 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
           IconButton(
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Modifier',
-            onPressed: () => Navigator.of(context)
-                .push(AppPageRoute(builder: (_) => CreditFormPage(existing: credit))),
+            onPressed: () => Navigator.of(context).push(AppPageRoute(builder: (_) => CreditFormPage(existing: credit))),
           ),
         ],
       ),
@@ -161,16 +227,12 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
             const SizedBox(height: AppSpacing.xs),
             Text('${(credit.repaidProgress * 100).round()} % remboursé',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
-
             const Divider(height: AppSpacing.xxxl),
-
             Text('Historique', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
             _DetailRow(label: 'Ajouté le', value: formatDayMonthFr(credit.createdAt)),
             _DetailRow(label: 'Dernière mise à jour', value: formatDayMonthFr(credit.updatedAt)),
-
             const Divider(height: AppSpacing.xxxl),
-
             Text('Versement exceptionnel', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.sm),
             Text(
@@ -202,7 +264,71 @@ class _CreditDetailPageState extends ConsumerState<CreditDetailPage> {
                 monthlyPaymentCents: credit.monthlyPaymentCents,
               ),
             ],
-
+            if (credit.isActive) ...[
+              const Divider(height: AppSpacing.xxxl),
+              Text('Augmenter ma mensualité', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'Teste une nouvelle mensualité — rien n\'est enregistré tant que tu ne choisis pas de l\'appliquer.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _newMonthlyPaymentController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                      decoration: const InputDecoration(labelText: 'Nouvelle mensualité testée', suffixText: '€'),
+                      onChanged: (_) => _runPaymentIncreaseSimulation(),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  FilledButton(onPressed: _runPaymentIncreaseSimulation, child: const Text('Simuler la mensualité')),
+                ],
+              ),
+              if (_paymentIncreaseSimulation != null) ...[
+                const SizedBox(height: AppSpacing.lg),
+                _PaymentIncreaseResult(
+                  simulation: _paymentIncreaseSimulation!,
+                  credit: credit,
+                  activeCredits: activeCredits,
+                  totalIncomeCents: totalIncomeCents,
+                  totalFixedExpensesExcludingCreditsCents: totalFixedExpensesExcludingCreditsCents,
+                  applying: _applyingNewPayment,
+                  onApply: () async {
+                    final simulated = _paymentIncreaseSimulation!;
+                    final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Appliquer cette nouvelle mensualité ?'),
+                            content: Text(
+                              '${credit.name} passera de ${formatCentsAsEuro(simulated.currentMonthlyPaymentCents)} '
+                              'à ${formatCentsAsEuro(simulated.simulatedMonthlyPaymentCents)}/mois. '
+                              'La charge fixe liée à ce crédit sera mise à jour automatiquement.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(dialogContext).pop(false),
+                                child: const Text('Annuler'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.of(dialogContext).pop(true),
+                                child: const Text('Appliquer'),
+                              ),
+                            ],
+                          ),
+                        ) ??
+                        false;
+                    if (confirmed) {
+                      await _applyNewMonthlyPayment(simulated.simulatedMonthlyPaymentCents);
+                    }
+                  },
+                ),
+              ],
+            ],
             const SizedBox(height: AppSpacing.xxxl),
             OutlinedButton.icon(
               onPressed: () async {
@@ -326,6 +452,178 @@ class _SimulationResult extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         Text(
           'Estimation simplifiée — hors intérêts, hors assurance, hors pénalités.',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+}
+
+/// Résultat de la simulation d'augmentation de mensualité (V1.2, §2) :
+/// mensualité actuelle/simulée, capital restant, nouvelle durée, nouvelle
+/// date de fin, mois gagnés, intérêts économisés si connus, et l'impact sur
+/// le taux d'endettement et le RESTE À VIVRE STRUCTUREL — calculés avec LES
+/// mêmes formules que Credit Manager / Project Planner
+/// (`CreditCalculationService.debtRatio` et `HouseholdFinanceService.
+/// structuralRemainingCents`), jamais recalculées différemment ici.
+class _PaymentIncreaseResult extends StatelessWidget {
+  final CreditPaymentIncreaseSimulation simulation;
+  final CreditEntity credit;
+  final List<CreditEntity> activeCredits;
+  final int totalIncomeCents;
+  final int totalFixedExpensesExcludingCreditsCents;
+  final bool applying;
+  final VoidCallback onApply;
+
+  const _PaymentIncreaseResult({
+    required this.simulation,
+    required this.credit,
+    required this.activeCredits,
+    required this.totalIncomeCents,
+    required this.totalFixedExpensesExcludingCreditsCents,
+    required this.applying,
+    required this.onApply,
+  });
+
+  CreditEntity _withMonthlyPayment(CreditEntity c, int monthlyPaymentCents) => CreditEntity(
+        id: c.id,
+        name: c.name,
+        initialAmountCents: c.initialAmountCents,
+        remainingCapitalCents: c.remainingCapitalCents,
+        monthlyPaymentCents: monthlyPaymentCents,
+        annualRatePercent: c.annualRatePercent,
+        startDate: c.startDate,
+        expectedEndDate: c.expectedEndDate,
+        remainingInstallments: c.remainingInstallments,
+        creditType: c.creditType,
+        earlyRepaymentAllowed: c.earlyRepaymentAllowed,
+        earlyRepaymentPenaltyCents: c.earlyRepaymentPenaltyCents,
+        notes: c.notes,
+        isActive: c.isActive,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        organisme: c.organisme,
+        colorValue: c.colorValue,
+        iconCodePoint: c.iconCodePoint,
+        paymentDayOfMonth: c.paymentDayOfMonth,
+        insuranceCents: c.insuranceCents,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    final simulatedActiveCredits = [
+      for (final c in activeCredits)
+        if (c.id == credit.id) _withMonthlyPayment(c, simulation.simulatedMonthlyPaymentCents) else c,
+    ];
+
+    final currentDebtRatio =
+        _creditCalculationService.debtRatio(activeCredits: activeCredits, totalIncomeCents: totalIncomeCents);
+    final simulatedDebtRatio = _creditCalculationService.debtRatio(
+      activeCredits: simulatedActiveCredits,
+      totalIncomeCents: totalIncomeCents,
+    );
+    final currentRemaining = _householdFinanceService.structuralRemainingCents(
+      totalIncomeCents: totalIncomeCents,
+      totalFixedExpensesExcludingCreditsCents: totalFixedExpensesExcludingCreditsCents,
+      activeCredits: activeCredits,
+    );
+    final simulatedRemaining = _householdFinanceService.structuralRemainingCents(
+      totalIncomeCents: totalIncomeCents,
+      totalFixedExpensesExcludingCreditsCents: totalFixedExpensesExcludingCreditsCents,
+      activeCredits: simulatedActiveCredits,
+    );
+
+    final debtBandAfter = debtRatioBandFor(simulatedDebtRatio);
+    final worseningDebtBand =
+        debtBandAfter == DebtRatioBand.high && debtRatioBandFor(currentDebtRatio) != DebtRatioBand.high;
+    final remainingDropRatio = currentRemaining > 0 ? (currentRemaining - simulatedRemaining) / currentRemaining : 0.0;
+    final heavyDrop = remainingDropRatio >= kMaxHealthyRemainingDropRatio;
+    final remainingBecomesNegative = simulatedRemaining <= 0 && currentRemaining > 0;
+    final showWarning = worseningDebtBand || heavyDrop || remainingBecomesNegative;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          decoration: BoxDecoration(
+            color: Color.alphaBlend(CategoryColors.credit.withValues(alpha: 0.08), colorScheme.surfaceContainerHigh),
+            borderRadius: BorderRadius.circular(AppRadii.md),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DetailRow(
+                  label: 'Mensualité actuelle',
+                  value: '${formatCentsAsEuro(simulation.currentMonthlyPaymentCents)}/mois'),
+              _DetailRow(
+                  label: 'Mensualité simulée',
+                  value: '${formatCentsAsEuro(simulation.simulatedMonthlyPaymentCents)}/mois'),
+              _DetailRow(label: 'Capital restant', value: formatCentsAsEuro(simulation.remainingCapitalCents)),
+              _DetailRow(label: 'Nouvelle durée estimée', value: '${simulation.simulatedRemainingInstallments} mois'),
+              _DetailRow(label: 'Nouvelle date de fin', value: formatMonthYearFr(simulation.simulatedEndDate)),
+              _DetailRow(
+                label: simulation.monthsSaved >= 0 ? 'Mois gagnés' : 'Mois supplémentaires',
+                value: '${simulation.monthsSaved.abs()} mois',
+              ),
+              if (simulation.estimatedInterestSavedCents != null)
+                _DetailRow(
+                    label: 'Intérêts économisés (estimation)',
+                    value: formatCentsAsEuro(simulation.estimatedInterestSavedCents!))
+              else
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+                  child: Text(
+                    'Taux non renseigné : estimation simplifiée, sans intérêts calculés.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              const SizedBox(height: AppSpacing.md),
+              Divider(color: colorScheme.outlineVariant, height: 1),
+              const SizedBox(height: AppSpacing.md),
+              _DetailRow(label: 'Taux d\'endettement actuel', value: '${(currentDebtRatio * 100).round()} %'),
+              _DetailRow(label: 'Taux d\'endettement simulé', value: '${(simulatedDebtRatio * 100).round()} %'),
+              _DetailRow(label: 'Reste à vivre actuel', value: '${formatCentsAsEuro(currentRemaining)}/mois'),
+              _DetailRow(
+                  label: 'Reste à vivre après augmentation', value: '${formatCentsAsEuro(simulatedRemaining)}/mois'),
+            ],
+          ),
+        ),
+        if (showWarning) ...[
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            decoration: BoxDecoration(
+              color: BudgetColors.danger.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppRadii.md),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: BudgetColors.danger, size: 20),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Cette mensualité dégraderait fortement ton reste à vivre ou ton taux d\'endettement — '
+                    'à valider avec prudence.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.md),
+        OutlinedButton(
+          onPressed: applying ? null : onApply,
+          child: Text(applying ? 'Application…' : 'Appliquer cette nouvelle mensualité'),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          'Estimation simplifiée — hors intérêts composés, hors assurance, hors renégociation de taux.',
           style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
       ],

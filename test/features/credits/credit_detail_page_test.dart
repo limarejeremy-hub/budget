@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'package:budgetpilot/core/formatting/currency_formatter.dart';
 import 'package:budgetpilot/core/providers/database_provider.dart';
 import 'package:budgetpilot/data/local/cycle_repository.dart';
 import 'package:budgetpilot/data/local/database.dart';
@@ -151,5 +152,157 @@ void main() {
 
     final updated = (await repository.loadCredits()).single;
     expect(updated.isActive, isFalse);
+  });
+
+  group('simulateur "Augmenter ma mensualité" (V1.2, §2)', () {
+    Future<CreditEntity> seedCreditWithCycle({
+      int incomeCents = 300000,
+      int monthlyPaymentCents = 27500,
+      double? annualRatePercent,
+    }) async {
+      await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      final cycleData = await repository.loadCurrentCycleData();
+      await repository.createIncome(
+        cycleId: cycleData!.cycle.id,
+        name: 'Salaire',
+        expectedAmountCents: incomeCents,
+        expectedDate: DateTime(2026, 1, 1),
+      );
+      final id = await repository.createCredit(
+        name: 'Prêt personnel',
+        initialAmountCents: 2000000,
+        remainingCapitalCents: 1000000,
+        monthlyPaymentCents: monthlyPaymentCents,
+        annualRatePercent: annualRatePercent,
+        expectedEndDate: DateTime(2029, 6, 1),
+        remainingInstallments: 40,
+      );
+      final row = (await repository.loadCredits()).single;
+      return CreditEntity(
+        id: id,
+        name: row.name,
+        initialAmountCents: row.initialAmountCents,
+        remainingCapitalCents: row.remainingCapitalCents,
+        monthlyPaymentCents: row.monthlyPaymentCents,
+        annualRatePercent: row.annualRatePercent,
+        expectedEndDate: row.expectedEndDate,
+        remainingInstallments: row.remainingInstallments,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      );
+    }
+
+    testWidgets('affiche tous les indicateurs requis après simulation', (tester) async {
+      useTallViewport(tester);
+      final credit = await seedCreditWithCycle(annualRatePercent: 3.0);
+
+      await tester.pumpWidget(wrap(credit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Nouvelle mensualité testée'), '400');
+      await tester.tap(find.text('Simuler la mensualité'));
+      await tester.pump();
+
+      expect(find.text('Mensualité actuelle'), findsOneWidget);
+      expect(find.text('${formatCentsAsEuro(27500)}/mois'), findsOneWidget);
+      expect(find.text('Mensualité simulée'), findsOneWidget);
+      expect(find.text('${formatCentsAsEuro(40000)}/mois'), findsOneWidget);
+      expect(find.text('Capital restant'), findsOneWidget);
+      expect(find.text('Nouvelle durée estimée'), findsOneWidget);
+      expect(find.text('25 mois'), findsOneWidget);
+      expect(find.text('Nouvelle date de fin'), findsOneWidget);
+      expect(find.text('Mois gagnés'), findsOneWidget);
+      expect(find.text('Intérêts économisés (estimation)'), findsOneWidget);
+      expect(find.text('Taux d\'endettement actuel'), findsOneWidget);
+      expect(find.text('Taux d\'endettement simulé'), findsOneWidget);
+      expect(find.text('Reste à vivre actuel'), findsOneWidget);
+      expect(find.text('Reste à vivre après augmentation'), findsOneWidget);
+      expect(find.text('Appliquer cette nouvelle mensualité'), findsOneWidget);
+    });
+
+    testWidgets('sans taux renseigné, aucun intérêt n\'est inventé', (tester) async {
+      useTallViewport(tester);
+      final credit = await seedCreditWithCycle(annualRatePercent: null);
+
+      await tester.pumpWidget(wrap(credit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Nouvelle mensualité testée'), '400');
+      await tester.tap(find.text('Simuler la mensualité'));
+      await tester.pump();
+
+      expect(find.text('Intérêts économisés (estimation)'), findsNothing);
+      expect(find.text('Taux non renseigné : estimation simplifiée, sans intérêts calculés.'), findsOneWidget);
+    });
+
+    testWidgets('affiche un avertissement quand la mensualité simulée dégrade fortement le reste à vivre',
+        (tester) async {
+      useTallViewport(tester);
+      // Revenus 3000 €, mensualité actuelle 275 €. Simulation à 2900 €/mois :
+      // le reste à vivre structurel s'effondre presque entièrement.
+      final credit = await seedCreditWithCycle(incomeCents: 300000, monthlyPaymentCents: 27500);
+
+      await tester.pumpWidget(wrap(credit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Nouvelle mensualité testée'), '2900');
+      await tester.tap(find.text('Simuler la mensualité'));
+      await tester.pump();
+
+      expect(
+        find.text(
+          'Cette mensualité dégraderait fortement ton reste à vivre ou ton taux d\'endettement — '
+          'à valider avec prudence.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('appliquer la nouvelle mensualité met à jour le crédit et synchronise la charge liée', (tester) async {
+      useTallViewport(tester);
+      final credit = await seedCreditWithCycle();
+
+      await tester.pumpWidget(wrap(credit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Nouvelle mensualité testée'), '400');
+      await tester.tap(find.text('Simuler la mensualité'));
+      await tester.pump();
+
+      await tester.tap(find.text('Appliquer cette nouvelle mensualité'));
+      await tester.pumpAndSettle();
+
+      // Confirmation
+      expect(find.text('Appliquer cette nouvelle mensualité ?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Appliquer'));
+      await tester.pumpAndSettle();
+
+      final updatedCredit = (await repository.loadCredits()).single;
+      expect(updatedCredit.monthlyPaymentCents, 40000);
+
+      final cycleData = await repository.loadCurrentCycleData();
+      final linkedCharge = cycleData!.fixedExpenses.singleWhere((e) => e.linkedCreditId == credit.id);
+      expect(linkedCharge.expectedAmountCents, 40000);
+    });
+
+    testWidgets('annuler la confirmation ne modifie rien', (tester) async {
+      useTallViewport(tester);
+      final credit = await seedCreditWithCycle();
+
+      await tester.pumpWidget(wrap(credit));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Nouvelle mensualité testée'), '400');
+      await tester.tap(find.text('Simuler la mensualité'));
+      await tester.pump();
+
+      await tester.tap(find.text('Appliquer cette nouvelle mensualité'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(TextButton, 'Annuler'));
+      await tester.pumpAndSettle();
+
+      final unchangedCredit = (await repository.loadCredits()).single;
+      expect(unchangedCredit.monthlyPaymentCents, 27500);
+    });
   });
 }

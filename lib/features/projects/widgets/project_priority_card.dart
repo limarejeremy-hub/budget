@@ -10,6 +10,7 @@ import '../../../core/routing/app_page_route.dart';
 import '../../../core/theme/design_tokens.dart';
 import '../../../domain/calculations/credit_calculation_service.dart';
 import '../../../domain/calculations/debt_ratio_bands.dart';
+import '../../../domain/calculations/household_finance_service.dart';
 import '../../../domain/calculations/project_health_service.dart';
 import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/project_entity.dart';
@@ -19,6 +20,7 @@ import '../projects_page.dart';
 
 const _healthService = ProjectHealthService();
 const _creditCalculationService = CreditCalculationService();
+const _householdFinanceService = HouseholdFinanceService();
 
 /// Carte "Projets" de la Home — point d'entrée naturel vers le module
 /// Projets (§1), qui devient la carte "Projet prioritaire" (§14 V1.0, §13
@@ -41,8 +43,15 @@ class ProjectPriorityCard extends ConsumerWidget {
     if (active.isEmpty) return const _EmptyProjectsCard();
 
     final activeCredits = _creditCalculationService.activeOnly(creditsAsync.valueOrNull ?? const []);
-    final currentFreeCashCents = dashboard.realRemainingCents;
     final totalIncomeCents = dashboard.totalIncomeCents;
+    // Reste à vivre STRUCTUREL (jamais l'argent libre du cycle) : le
+    // Project Planner mesure la capacité financière récurrente du foyer,
+    // pas ce qui a déjà été dépensé ce mois-ci.
+    final currentFreeCashCents = _householdFinanceService.structuralRemainingCents(
+      totalIncomeCents: totalIncomeCents,
+      totalFixedExpensesExcludingCreditsCents: dashboard.totalFixedExpensesExcludingCreditsCents,
+      activeCredits: activeCredits,
+    );
 
     final priority = _selectPriorityProject(
       active,

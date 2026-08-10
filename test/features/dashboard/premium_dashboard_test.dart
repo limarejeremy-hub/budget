@@ -88,8 +88,7 @@ void main() {
       expect(find.textContaining("Disponible jusqu'au"), findsOneWidget);
     });
 
-    testWidgets('badge vert "Situation confortable" quand le ratio est confortable',
-        (tester) async {
+    testWidgets('badge vert "Situation confortable" quand le ratio est confortable', (tester) async {
       await _pumpDashboard(tester, _sampleData(remainingRatio: 0.30));
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -129,8 +128,10 @@ void main() {
       expect(find.text('Charges'), findsOneWidget);
       expect(find.text(formatCentsAsEuro(data.totalFixedExpensesCents)), findsOneWidget);
 
-      expect(find.text('Dépenses'), findsOneWidget);
-      expect(find.text(formatCentsAsEuro(data.totalVariableExpensesCents)), findsOneWidget);
+      // "Dépenses" et son montant apparaissent aussi dans "Mes indicateurs"
+      // (V1.2) — au moins une fois dans le résumé du cycle, jamais zéro.
+      expect(find.text('Dépenses'), findsWidgets);
+      expect(find.text(formatCentsAsEuro(data.totalVariableExpensesCents)), findsWidgets);
 
       expect(find.text('Épargnes'), findsOneWidget);
       expect(find.text(formatCentsAsEuro(data.totalSavingsCents)), findsOneWidget);
@@ -158,11 +159,14 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      // Les décomptes par catégorie du résumé du cycle restent des nombres
+      // bruts, jamais un pourcentage — "Mes indicateurs" (V1.2) affiche par
+      // ailleurs des pourcentages ailleurs sur l'accueil, ce n'est donc plus
+      // une règle globale de la page, seulement de ces quatre décomptes.
       expect(find.text('1 revenu'), findsOneWidget);
       expect(find.text('3 prélèvements'), findsOneWidget);
       expect(find.text('2 dépenses'), findsOneWidget);
       expect(find.text('1 épargne'), findsOneWidget);
-      expect(find.textContaining('%'), findsNothing);
     });
   });
 
@@ -285,7 +289,8 @@ void main() {
           ),
         ],
         todayIncomes: [
-          IncomeEntity(id: 1, cycleId: 1, name: 'Salaire', expectedAmountCents: 245000, expectedDate: DateTime(2026, 8, 5)),
+          IncomeEntity(
+              id: 1, cycleId: 1, name: 'Salaire', expectedAmountCents: 245000, expectedDate: DateTime(2026, 8, 5)),
         ],
         alerts: [
           FixedExpenseEntity(
@@ -307,8 +312,7 @@ void main() {
       expect(find.textContaining('Assurance'), findsOneWidget);
     });
 
-    testWidgets('affiche un badge avec le nombre d\'opérations en attente de confirmation (V0.9)',
-        (tester) async {
+    testWidgets('affiche un badge avec le nombre d\'opérations en attente de confirmation (V0.9)', (tester) async {
       final data = DashboardViewData(
         cycleId: 1,
         cycleStart: DateTime(2026, 7, 27),
@@ -348,8 +352,7 @@ void main() {
       expect(find.text('2'), findsOneWidget);
     });
 
-    testWidgets('un tap sur la carte "Aujourd\'hui" ouvre le centre de confirmations (V0.9)',
-        (tester) async {
+    testWidgets('un tap sur la carte "Aujourd\'hui" ouvre le centre de confirmations (V0.9)', (tester) async {
       await _pumpDashboard(tester, _sampleData());
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);

@@ -9,6 +9,7 @@ import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/calculations/credit_calculation_service.dart';
+import '../../domain/calculations/household_finance_service.dart';
 import '../../domain/calculations/project_debt_impact_service.dart';
 import '../../domain/calculations/project_feasibility_service.dart';
 import '../../domain/calculations/project_health_service.dart';
@@ -22,6 +23,7 @@ import 'widgets/project_simulator_sheet.dart';
 const _healthService = ProjectHealthService();
 const _scenarioService = ProjectScenarioService();
 const _creditCalculationService = CreditCalculationService();
+const _householdFinanceService = HouseholdFinanceService();
 
 /// Fiche détaillée d'un projet (V1.0 — Project Planner, §12 ; enrichie
 /// V1.1/V1.2 : taux d'endettement et reste à vivre, avant/après — des
@@ -70,10 +72,18 @@ class ProjectDetailPage extends ConsumerWidget {
                 }
                 final credits = creditsAsync.valueOrNull ?? const [];
                 final activeCredits = _creditCalculationService.activeOnly(credits);
+                // Reste à vivre STRUCTUREL (jamais l'argent libre du cycle) :
+                // le Project Planner mesure la capacité financière récurrente
+                // du foyer, pas ce qui a déjà été dépensé ce mois-ci.
+                final structuralRemainingCents = _householdFinanceService.structuralRemainingCents(
+                  totalIncomeCents: dashboard.totalIncomeCents,
+                  totalFixedExpensesExcludingCreditsCents: dashboard.totalFixedExpensesExcludingCreditsCents,
+                  activeCredits: activeCredits,
+                );
 
                 return _ProjectDetailBody(
                   project: project!,
-                  currentFreeCashCents: dashboard.realRemainingCents,
+                  currentFreeCashCents: structuralRemainingCents,
                   totalIncomeCents: dashboard.totalIncomeCents,
                   activeCredits: activeCredits,
                 );
