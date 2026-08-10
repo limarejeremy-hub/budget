@@ -105,30 +105,78 @@ void main() {
     });
   });
 
-  group('topCharges', () {
-    test('les 3 charges les plus coûteuses, montant décroissant', () {
-      final top = topCharges(all);
-      expect(top.map((c) => c.name), ['Loyer', 'Crédit auto', 'Électricité']);
+  group('usedChargeCategories (correction UX, §1 : génération dynamique)', () {
+    test('renvoie uniquement les catégories réellement utilisées, jamais une liste codée en dur', () {
+      final options = usedChargeCategories(all, categoryNames: categoryNames);
+      expect(options.map((o) => o.name), ['Crédit', 'Énergie', 'Logement']);
     });
 
-    test('exclut les charges inactives et suspendues', () {
-      final suspendue = charge(id: 7, name: 'Salle de sport', cents: 990000, status: ChargeStatus.suspendue);
-      final inactive = charge(id: 8, name: 'Ancien abonnement', cents: 500000, isActive: false);
-      final top = topCharges([...all, suspendue, inactive]);
-      expect(top.map((c) => c.name), ['Loyer', 'Crédit auto', 'Électricité']);
+    test('une catégorie non utilisée par aucune charge n\'apparaît jamais', () {
+      final onlyLoyer = [loyer];
+      final options = usedChargeCategories(onlyLoyer, categoryNames: categoryNames);
+      expect(options.map((o) => o.name), ['Logement']);
     });
 
-    test('limite à count éléments (par défaut 3)', () {
-      final many = [
-        ...all,
-        charge(id: 9, name: 'Internet', cents: 4000),
-        charge(id: 10, name: 'Téléphone', cents: 2500),
-      ];
-      expect(topCharges(many), hasLength(3));
+    test('les charges sans catégorie apparaissent comme "Sans catégorie"', () {
+      final sansCategorie = charge(id: 4, name: 'Divers', cents: 5000, categoryId: null);
+      final options = usedChargeCategories([sansCategorie], categoryNames: categoryNames);
+      expect(options.single.categoryId, isNull);
+      expect(options.single.name, 'Sans catégorie');
     });
 
-    test('vide si aucune charge éligible', () {
-      expect(topCharges(const []), isEmpty);
+    test('triées par ordre alphabétique, insensible aux accents', () {
+      final options = usedChargeCategories(all, categoryNames: categoryNames);
+      expect(options.map((o) => o.categoryId), [2, 3, 1]); // Crédit, Énergie, Logement
+    });
+  });
+
+  group('categoryTotals (correction UX, §2/§3 : coût réel du groupe, classement)', () {
+    test('calcule le total mensuel de chaque catégorie à partir des charges enregistrées', () {
+      final maison1 = charge(id: 10, name: 'Crédit Maison', cents: 45300, categoryId: 1);
+      final maison2 = charge(id: 11, name: 'Fenêtres', cents: 36900, categoryId: 1);
+      final totals = categoryTotals([maison1, maison2], categoryNames: {1: 'Maison'});
+      expect(totals.single.categoryName, 'Maison');
+      expect(totals.single.totalCents, 45300 + 36900);
+    });
+
+    test('classement du plus coûteux au moins coûteux', () {
+      final totals = categoryTotals(all, categoryNames: categoryNames);
+      expect(totals.map((t) => t.categoryName), ['Logement', 'Crédit', 'Énergie']);
+      expect(totals.map((t) => t.totalCents), [95000, 28000, 14500]);
+    });
+
+    test('exclut les charges inactives et suspendues du total (comme calculateTotalFixedExpenses)', () {
+      final active = charge(id: 20, name: 'Loyer', cents: 90000, categoryId: 1);
+      final suspendue =
+          charge(id: 21, name: 'Salle de sport', cents: 50000, categoryId: 1, status: ChargeStatus.suspendue);
+      final inactive = charge(id: 22, name: 'Ancien abonnement', cents: 30000, categoryId: 1, isActive: false);
+      final totals = categoryTotals([active, suspendue, inactive], categoryNames: {1: 'Maison'});
+      expect(totals.single.totalCents, 90000);
+    });
+
+    test('absence de double comptage : une charge liée à un crédit n\'est comptée qu\'une seule fois', () {
+      final linked = FixedExpenseEntity(
+        id: 30,
+        cycleId: 1,
+        name: 'Mensualité voiture',
+        expectedAmountCents: 28000,
+        expectedDate: today,
+        categoryId: 2,
+        linkedCreditId: 7,
+      );
+      final totals = categoryTotals([linked], categoryNames: {2: 'Crédit'});
+      expect(totals.single.totalCents, 28000);
+    });
+
+    test('regroupe les charges sans catégorie sous "Sans catégorie"', () {
+      final sansCategorie = charge(id: 40, name: 'Divers', cents: 5000, categoryId: null);
+      final totals = categoryTotals([sansCategorie], categoryNames: categoryNames);
+      expect(totals.single.categoryId, isNull);
+      expect(totals.single.categoryName, 'Sans catégorie');
+    });
+
+    test('vide si aucune charge', () {
+      expect(categoryTotals(const [], categoryNames: categoryNames), isEmpty);
     });
   });
 }

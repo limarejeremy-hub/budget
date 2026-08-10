@@ -98,12 +98,67 @@ List<FixedExpenseEntity> sortCharges(
   return sorted;
 }
 
-/// Les charges les plus coûteuses — "Charges les plus importantes" (V1.2,
-/// §1), montant décroissant, parmi les charges réellement actives (exclut
-/// les charges inactives et suspendues, qui ne pèsent pas sur le budget
-/// courant). Vide si aucune charge n'est éligible.
-List<FixedExpenseEntity> topCharges(List<FixedExpenseEntity> charges, {int count = 3}) {
-  final eligible = charges.where((c) => c.isActive && c.status != ChargeStatus.suspendue).toList()
-    ..sort((a, b) => b.effectiveAmountCents.compareTo(a.effectiveAmountCents));
-  return eligible.take(count).toList();
+/// Une catégorie de charge fixe réellement utilisée, avec son nom résolu —
+/// `categoryId == null` représente les charges sans catégorie. Jamais une
+/// liste codée en dur : toujours dérivée des charges existantes.
+class ChargeCategoryOption {
+  final int? categoryId;
+  final String name;
+  const ChargeCategoryOption({required this.categoryId, required this.name});
+}
+
+/// Catégories réellement utilisées parmi [charges] (jamais une liste codée
+/// en dur), triées par nom alphabétique (insensible aux accents) pour un
+/// menu déroulant prévisible — voir [categoryTotals] pour un classement par
+/// coût.
+List<ChargeCategoryOption> usedChargeCategories(
+  List<FixedExpenseEntity> charges, {
+  required Map<int, String> categoryNames,
+}) {
+  final ids = charges.map((c) => c.categoryId).toSet();
+  final options = ids.map((id) {
+    final name = id == null ? 'Sans catégorie' : (categoryNames[id] ?? 'Sans catégorie');
+    return ChargeCategoryOption(categoryId: id, name: name);
+  }).toList()
+    ..sort((a, b) => _foldDiacritics(a.name.toLowerCase()).compareTo(_foldDiacritics(b.name.toLowerCase())));
+  return options;
+}
+
+/// Coût total mensuel d'une catégorie de charges fixes.
+class CategoryChargeTotal {
+  final int? categoryId;
+  final String categoryName;
+  final int totalCents;
+  const CategoryChargeTotal({required this.categoryId, required this.categoryName, required this.totalCents});
+}
+
+/// Coût total mensuel de chaque catégorie réellement utilisée — LA seule
+/// formule de total par catégorie, réutilisée à la fois par l'en-tête de
+/// catégorie sélectionnée et par le classement. Reprend
+/// `effectiveAmountCents` (montant réel si connu, sinon montant prévu) et
+/// exclut les charges inactives ou suspendues, exactement comme
+/// `BudgetCalculationService.calculateTotalFixedExpenses` — jamais un
+/// nouveau calcul du montant d'une charge. Chaque charge (y compris liée à
+/// un crédit) n'est comptée qu'une seule fois, dans sa seule catégorie.
+/// Trié du plus coûteux au moins coûteux ("classement par coût").
+List<CategoryChargeTotal> categoryTotals(
+  List<FixedExpenseEntity> charges, {
+  required Map<int, String> categoryNames,
+}) {
+  final eligible = charges.where((c) => c.isActive && c.status != ChargeStatus.suspendue);
+  final totals = <int?, int>{};
+  for (final charge in eligible) {
+    totals.update(
+      charge.categoryId,
+      (sum) => sum + charge.effectiveAmountCents,
+      ifAbsent: () => charge.effectiveAmountCents,
+    );
+  }
+  final result = totals.entries.map((entry) {
+    final id = entry.key;
+    final name = id == null ? 'Sans catégorie' : (categoryNames[id] ?? 'Sans catégorie');
+    return CategoryChargeTotal(categoryId: id, categoryName: name, totalCents: entry.value);
+  }).toList()
+    ..sort((a, b) => b.totalCents.compareTo(a.totalCents));
+  return result;
 }

@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,116 +33,241 @@ void main() {
     );
   }
 
-  testWidgets('affiche le bloc "Charges les plus importantes" avec le top 3 par montant', (tester) async {
-    final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Loyer', expectedAmountCents: 95000, expectedDate: DateTime(2026, 8, 1));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Crédit auto', expectedAmountCents: 28000, expectedDate: DateTime(2026, 8, 5));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Électricité', expectedAmountCents: 14500, expectedDate: DateTime(2026, 8, 10));
-
-    await tester.pumpWidget(wrap());
-    await tester.pumpAndSettle();
-
-    expect(find.text('Charges les plus importantes'), findsOneWidget);
-    expect(find.text('1.'), findsOneWidget);
-    expect(find.text('2.'), findsOneWidget);
-    expect(find.text('3.'), findsOneWidget);
-    expect(find.text(formatCentsAsEuro(95000)), findsWidgets);
-  });
-
-  testWidgets('aucune charge : le bloc "Charges les plus importantes" n\'apparaît pas', (tester) async {
-    await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
-
-    await tester.pumpWidget(wrap());
-    await tester.pumpAndSettle();
-
-    expect(find.text('Charges les plus importantes'), findsNothing);
-    expect(find.text('Aucune charge fixe pour ce cycle'), findsOneWidget);
-  });
-
-  testWidgets('le raccourci "Les plus coûteuses" trie immédiatement par montant décroissant', (tester) async {
-    final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Électricité', expectedAmountCents: 14500, expectedDate: DateTime(2026, 8, 1));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Loyer', expectedAmountCents: 95000, expectedDate: DateTime(2026, 8, 10));
-
-    await tester.pumpWidget(wrap());
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Les plus coûteuses'));
-    await tester.pumpAndSettle();
-
-    // Le raccourci sélectionne le champ "Montant" en décroissant : la puce
-    // "Les plus coûteuses" ET la puce "Montant" doivent toutes deux
-    // apparaître sélectionnées.
-    final shortcutChip = tester.widget<ChoiceChip>(
-      find.ancestor(of: find.text('Les plus coûteuses'), matching: find.byType(ChoiceChip)),
-    );
-    final montantChip = tester.widget<ChoiceChip>(
-      find.ancestor(of: find.text('Montant'), matching: find.byType(ChoiceChip)),
-    );
-    expect(shortcutChip.selected, isTrue);
-    expect(montantChip.selected, isTrue);
-
-    // Le premier résultat de la liste principale doit être la charge la
-    // plus chère : "Loyer" (95000) avant "Électricité" (14500).
-    final chargeCardTexts = find.descendant(
-      of: find.byType(ListView).last,
-      matching: find.byType(Text),
-    );
-    final firstChargeName = tester.widgetList<Text>(chargeCardTexts).map((t) => t.data).firstWhere(
-          (t) => t == 'Loyer' || t == 'Électricité',
+  Future<int> seedCategory(String name) async {
+    return db.into(db.categories).insert(
+          CategoriesCompanion.insert(name: name, type: 'fixed_expense'),
         );
-    expect(firstChargeName, 'Loyer');
-  });
+  }
 
-  testWidgets('changer de champ de tri via les puces fonctionne (ex: Nom)', (tester) async {
+  testWidgets('le menu déroulant liste uniquement les catégories réellement utilisées', (tester) async {
     final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+    final maisonId = await seedCategory('Maison');
+    await seedCategory('Voiture'); // catégorie existante mais jamais utilisée par une charge
     await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Zoo abonnement', expectedAmountCents: 3000, expectedDate: DateTime(2026, 8, 1));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Assurance', expectedAmountCents: 6000, expectedDate: DateTime(2026, 8, 5));
+      cycleId: cycleId,
+      name: 'Loyer',
+      expectedAmountCents: 95000,
+      expectedDate: DateTime(2026, 8, 1),
+      categoryId: maisonId,
+    );
 
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Nom'));
+    expect(find.text('Toutes les catégories'), findsOneWidget);
+    await tester.tap(find.text('Toutes les catégories'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Assurance'), findsWidgets);
-    expect(find.text('Zoo abonnement'), findsWidgets);
+    expect(find.text('Maison').last, findsOneWidget);
+    expect(find.text('Voiture'), findsNothing);
   });
 
-  testWidgets('la recherche reste compatible avec le tri sélectionné', (tester) async {
+  testWidgets('sélectionner une catégorie filtre la liste et affiche son coût total mensuel', (tester) async {
     final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
-    // 4 charges : la recherche cible une charge hors du top 3 (toujours
-    // visible, indépendamment de la recherche) pour vérifier proprement le
-    // filtrage de la liste principale.
+    final maisonId = await seedCategory('Maison');
+    final voitureId = await seedCategory('Voiture');
     await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Loyer', expectedAmountCents: 95000, expectedDate: DateTime(2026, 8, 1));
+      cycleId: cycleId,
+      name: 'Crédit Maison',
+      expectedAmountCents: 45300,
+      expectedDate: DateTime(2026, 8, 1),
+      categoryId: maisonId,
+    );
     await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Crédit auto', expectedAmountCents: 28000, expectedDate: DateTime(2026, 8, 5));
+      cycleId: cycleId,
+      name: 'Fenêtres',
+      expectedAmountCents: 36900,
+      expectedDate: DateTime(2026, 8, 3),
+      categoryId: maisonId,
+    );
     await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Électricité', expectedAmountCents: 14500, expectedDate: DateTime(2026, 8, 10));
-    await repository.createFixedExpense(
-        cycleId: cycleId, name: 'Internet', expectedAmountCents: 3500, expectedDate: DateTime(2026, 8, 12));
+      cycleId: cycleId,
+      name: 'Assurance auto',
+      expectedAmountCents: 48600,
+      expectedDate: DateTime(2026, 8, 5),
+      categoryId: voitureId,
+    );
 
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Montant'));
+    await tester.tap(find.text('Toutes les catégories'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'internet');
+    await tester.tap(find.text('Maison').last);
     await tester.pumpAndSettle();
 
-    // "Internet" n'apparaît que dans la liste principale filtrée (absente
-    // du top 3). "Crédit auto" reste visible une seule fois — uniquement
-    // via le bloc "Charges les plus importantes", filtré hors de la liste
-    // principale par la recherche.
-    expect(find.text('Internet'), findsOneWidget);
-    expect(find.text('Crédit auto'), findsOneWidget);
+    expect(find.text('Crédit Maison'), findsOneWidget);
+    expect(find.text('Fenêtres'), findsOneWidget);
+    expect(find.text('Assurance auto'), findsNothing);
+    expect(find.text('${formatCentsAsEuro(45300 + 36900)}/mois'), findsOneWidget);
+  });
+
+  testWidgets('le classement affiche les catégories du plus coûteux au moins coûteux', (tester) async {
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+    final maisonId = await seedCategory('Maison');
+    final voitureId = await seedCategory('Voiture');
+    final telecomId = await seedCategory('Télécoms');
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Loyer',
+      expectedAmountCents: 90000,
+      expectedDate: DateTime(2026, 8, 1),
+      categoryId: maisonId,
+    );
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Assurance auto',
+      expectedAmountCents: 45000,
+      expectedDate: DateTime(2026, 8, 2),
+      categoryId: voitureId,
+    );
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Forfait mobile',
+      expectedAmountCents: 2500,
+      expectedDate: DateTime(2026, 8, 3),
+      categoryId: telecomId,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Classement'));
+    await tester.pumpAndSettle();
+
+    final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
+    expect(tiles, hasLength(3));
+    final titles = tiles.map((t) => (t.title as Text).data).toList();
+    expect(titles, ['Maison', 'Voiture', 'Télécoms']);
+  });
+
+  testWidgets('cliquer sur une catégorie du classement filtre directement la liste sur cette catégorie',
+      (tester) async {
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+    final maisonId = await seedCategory('Maison');
+    final voitureId = await seedCategory('Voiture');
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Loyer',
+      expectedAmountCents: 90000,
+      expectedDate: DateTime(2026, 8, 1),
+      categoryId: maisonId,
+    );
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Assurance auto',
+      expectedAmountCents: 45000,
+      expectedDate: DateTime(2026, 8, 2),
+      categoryId: voitureId,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Classement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Maison'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Loyer'), findsOneWidget);
+    expect(find.text('Assurance auto'), findsNothing);
+    expect(find.text('${formatCentsAsEuro(90000)}/mois'), findsOneWidget);
+  });
+
+  testWidgets('la recherche continue de fonctionner combinée à une catégorie sélectionnée', (tester) async {
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+    final maisonId = await seedCategory('Maison');
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Assurance Maison',
+      expectedAmountCents: 9500,
+      expectedDate: DateTime(2026, 8, 1),
+      categoryId: maisonId,
+    );
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Crédit Maison',
+      expectedAmountCents: 45300,
+      expectedDate: DateTime(2026, 8, 2),
+      categoryId: maisonId,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Toutes les catégories'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Maison').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'assurance');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Assurance Maison'), findsOneWidget);
+    expect(find.text('Crédit Maison'), findsNothing);
+  });
+
+  testWidgets('tri par défaut : montant décroissant dans une catégorie', (tester) async {
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+    final maisonId = await seedCategory('Maison');
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Fenêtres',
+      expectedAmountCents: 36900,
+      expectedDate: DateTime(2026, 8, 1),
+      categoryId: maisonId,
+    );
+    await repository.createFixedExpense(
+      cycleId: cycleId,
+      name: 'Crédit Maison',
+      expectedAmountCents: 45300,
+      expectedDate: DateTime(2026, 8, 2),
+      categoryId: maisonId,
+    );
+
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Toutes les catégories'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Maison').last);
+    await tester.pumpAndSettle();
+
+    final names = tester
+        .widgetList<Text>(find.descendant(of: find.byType(ListView), matching: find.byType(Text)))
+        .map((t) => t.data)
+        .where((t) => t == 'Fenêtres' || t == 'Crédit Maison')
+        .toList();
+    expect(names.first, 'Crédit Maison'); // le plus cher en premier
+  });
+
+  testWidgets('absence de double comptage : une charge liée à un crédit est comptée une seule fois dans le total',
+      (tester) async {
+    await repository.createCycle(startDate: DateTime(2026, 7, 27), endDate: DateTime(2026, 8, 26));
+    final creditCategoryId = await seedCategory('Crédits');
+    // createCredit génère automatiquement la charge fixe liée dans le cycle
+    // en cours — sa mensualité ne doit apparaître qu'une seule fois dans le
+    // total de la catégorie.
+    await repository.createCredit(
+      name: 'Voiture',
+      initialAmountCents: 1500000,
+      remainingCapitalCents: 900000,
+      monthlyPaymentCents: 28000,
+      expectedEndDate: DateTime(2029, 1, 1),
+      remainingInstallments: 36,
+    );
+    final data = await repository.loadCurrentCycleData();
+    final linkedCharge = data!.fixedExpenses.single;
+    await db.update(db.fixedExpenses).replace(linkedCharge.copyWith(categoryId: Value(creditCategoryId)));
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Toutes les catégories'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Crédits').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('${formatCentsAsEuro(28000)}/mois'), findsOneWidget);
+    expect(find.text('${formatCentsAsEuro(56000)}/mois'), findsNothing);
   });
 }
