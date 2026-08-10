@@ -1,7 +1,9 @@
 import '../../../core/constants/app_constants.dart';
 import '../../../domain/calculations/charge_status_service.dart';
+import '../../../domain/entities/credit_entity.dart';
 import '../../../domain/entities/fixed_expense_entity.dart';
 import '../../../domain/entities/income_entity.dart';
+import '../../../domain/entities/project_entity.dart';
 import '../../../domain/entities/saving_entity.dart';
 import '../../../domain/entities/variable_expense_entity.dart';
 import '../database.dart';
@@ -49,6 +51,7 @@ FixedExpenseEntity fixedExpenseFromRow(FixedExpense row, {DateTime? now}) {
     categoryId: row.categoryId,
     isRecurring: row.isRecurring,
     isActive: row.isActive,
+    linkedCreditId: row.linkedCreditId,
   );
 }
 
@@ -71,4 +74,48 @@ SavingEntity savingFromRow(Saving row) => SavingEntity(
       status: row.status,
       isRecurring: row.isRecurring,
       isActive: row.isActive,
+    );
+
+CreditEntity creditFromRow(Credit row) => CreditEntity(
+      id: row.id,
+      name: row.name,
+      initialAmountCents: row.initialAmountCents,
+      remainingCapitalCents: row.remainingCapitalCents,
+      monthlyPaymentCents: row.monthlyPaymentCents,
+      annualRatePercent: row.annualRatePercent,
+      startDate: row.startDate,
+      expectedEndDate: row.expectedEndDate,
+      remainingInstallments: row.remainingInstallments,
+      creditType: row.creditType,
+      earlyRepaymentAllowed: row.earlyRepaymentAllowed,
+      earlyRepaymentPenaltyCents: row.earlyRepaymentPenaltyCents,
+      notes: row.notes,
+      isActive: row.isActive,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      organisme: row.organisme,
+      colorValue: row.colorValue,
+      iconCodePoint: row.iconCodePoint,
+      paymentDayOfMonth: row.paymentDayOfMonth,
+      insuranceCents: row.insuranceCents,
+    );
+
+ProjectEntity projectFromRow(Project row) => ProjectEntity(
+      id: row.id,
+      name: row.name,
+      category: row.category,
+      targetAmountCents: row.targetAmountCents,
+      desiredDate: row.desiredDate,
+      availableContributionCents: row.availableContributionCents,
+      desiredContributionCents: row.desiredContributionCents,
+      financingMode: row.financingMode,
+      maxMonthlyPaymentCents: row.maxMonthlyPaymentCents,
+      desiredDurationMonths: row.desiredDurationMonths,
+      estimatedRatePercent: row.estimatedRatePercent,
+      extraMonthlyCostCents: row.extraMonthlyCostCents,
+      notes: row.notes,
+      isActive: row.isActive,
+      priority: row.priority,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
     );

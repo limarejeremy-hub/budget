@@ -9,6 +9,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/database_provider.dart';
 import '../../core/providers/settings_providers.dart';
+import '../../core/providers/shell_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/budgetpilot_logo.dart';
@@ -31,6 +32,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   int _versionTapCount = 0;
   bool _devMenuUnlocked = false;
   bool _backupBusy = false;
+  bool _resetBusy = false;
 
   void _onVersionTap() {
     setState(() {
@@ -103,8 +105,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     setState(() => _backupBusy = true);
     try {
-      final count =
-          await repository.importBackup(decoded! as Map<String, dynamic>, replaceExisting: replace);
+      final count = await repository.importBackup(decoded! as Map<String, dynamic>, replaceExisting: replace);
       if (mounted) {
         _showSnackBar(
             '$count cycle${count > 1 ? 's' : ''} importé${count > 1 ? 's' : ''} (${replace ? 'remplacement' : 'fusion'})');
@@ -163,6 +164,71 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// "Repartir de zéro" : supprime toutes les données financières et revient
+  /// à l'état du premier lancement. Double confirmation très claire avant
+  /// toute suppression — action irréversible.
+  Future<void> _startOver() async {
+    final wantsToContinue = await _confirmStartOverIntent();
+    if (wantsToContinue != true || !mounted) return;
+
+    final finalConfirmation = await _confirmStartOverFinal();
+    if (finalConfirmation != true || !mounted) return;
+
+    setState(() => _resetBusy = true);
+    try {
+      final repository = ref.read(cycleRepositoryProvider);
+      await repository.resetAllUserData();
+      if (!mounted) return;
+      // Ramène automatiquement sur l'onglet Accueil, qui affiche déjà
+      // l'écran de création du premier cycle dès que le dernier cycle a
+      // disparu (`dashboardProvider` est réactif).
+      ref.read(shellTabIndexProvider.notifier).state = 0;
+      _showSnackBar('Toutes les données ont été supprimées');
+    } finally {
+      if (mounted) setState(() => _resetBusy = false);
+    }
+  }
+
+  Future<bool?> _confirmStartOverIntent() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Repartir de zéro ?'),
+        content: const Text(
+          'Toutes les données financières seront supprimées : cycles, revenus, '
+          'charges, dépenses, épargnes, crédits, projets et historique de '
+          'confirmations associé.\n\n'
+          "Les préférences d'apparence, la langue et la configuration de "
+          "l'application sont conservées.",
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Continuer')),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _confirmStartOverFinal() {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dernière confirmation'),
+        content: const Text(
+          'Cette action supprimera toutes vos données financières et ne pourra pas être annulée.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+          FilledButton.tonal(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Repartir de zéro'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider).valueOrNull ?? ThemeMode.system;
@@ -196,18 +262,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: SegmentedButton<ThemeMode>(
                 segments: const [
                   ButtonSegment(
-                      value: ThemeMode.system,
-                      icon: Icon(Icons.brightness_auto_outlined),
-                      label: Text('Système')),
-                  ButtonSegment(
-                      value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Clair')),
-                  ButtonSegment(
-                      value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Sombre')),
+                      value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('Système')),
+                  ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Clair')),
+                  ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Sombre')),
                 ],
                 selected: {themeMode},
-                onSelectionChanged: (selection) => ref
-                    .read(cycleRepositoryProvider)
-                    .setThemeMode(themeModeToString(selection.first)),
+                onSelectionChanged: (selection) =>
+                    ref.read(cycleRepositoryProvider).setThemeMode(themeModeToString(selection.first)),
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -215,7 +276,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.file_upload_outlined),
               title: const Text('Exporter une sauvegarde'),
-              subtitle: const Text('Fichier JSON local — cycles, revenus, charges, dépenses, épargnes'),
+              subtitle: const Text('Fichier JSON local — cycles, revenus, charges, dépenses, épargnes, crédits'),
               enabled: !_backupBusy,
               onTap: _exportBackup,
             ),
@@ -225,6 +286,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               subtitle: const Text('Fusion ou remplacement, avec confirmation'),
               enabled: !_backupBusy,
               onTap: _importBackup,
+            ),
+            const _SectionHeader('Données'),
+            ListTile(
+              leading: Icon(Icons.restart_alt_outlined, color: Theme.of(context).colorScheme.error),
+              title: Text('Repartir de zéro', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              subtitle: const Text("Supprime toutes les données financières et revient à l'état du premier lancement"),
+              enabled: !_resetBusy,
+              onTap: _startOver,
             ),
             const _SectionHeader('À propos'),
             ListTile(
@@ -238,7 +307,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 0.6.0'),
+              subtitle: const Text('Version 1.1.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[

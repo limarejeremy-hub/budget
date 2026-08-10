@@ -20,15 +20,18 @@ import '../../domain/entities/fixed_expense_entity.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import '../charges/charge_detail_sheet.dart';
 import '../charges/charges_page.dart';
+import '../credits/widgets/credit_advice_card.dart';
+import '../credits/widgets/credits_summary_card.dart';
 import '../cycle/cycle_creation_page.dart';
 import '../cycle/cycle_detail_page.dart';
 import '../entries/incomes_list_page.dart';
 import '../entries/savings_list_page.dart';
 import '../expenses/variable_expenses_page.dart';
+import '../projects/widgets/project_priority_card.dart';
 import '../watchlist/watchlist_page.dart';
 import 'widgets/add_entry_fab.dart';
 import 'widgets/cycle_progress_bar.dart';
-import 'widgets/quick_summary_section.dart';
+import 'widgets/indicators_section.dart';
 import 'widgets/this_week_section.dart';
 import 'widgets/today_section.dart';
 
@@ -66,8 +69,7 @@ class _EmptyState extends StatelessWidget {
           children: [
             Icon(Icons.savings_outlined, size: 48, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
-            Text('Aucun cycle en cours',
-                style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
+            Text('Aucun cycle en cours', style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
               'Créez votre premier cycle budgétaire pour commencer à saisir vos revenus, '
@@ -128,12 +130,10 @@ class _DashboardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontalPadding =
-            math.max(AppSpacing.xl, (constraints.maxWidth - _maxContentWidth) / 2);
+        final horizontalPadding = math.max(AppSpacing.xl, (constraints.maxWidth - _maxContentWidth) / 2);
 
         return ListView(
-          padding: EdgeInsets.fromLTRB(
-              horizontalPadding, AppSpacing.lg, horizontalPadding, 100),
+          padding: EdgeInsets.fromLTRB(horizontalPadding, AppSpacing.lg, horizontalPadding, 100),
           children: [
             _DashboardHeader(cycleId: data.cycleId),
             const SizedBox(height: AppSpacing.xxl),
@@ -144,12 +144,18 @@ class _DashboardContent extends StatelessWidget {
             TodaySection(data: data),
             const SizedBox(height: AppSpacing.lg),
             ThisWeekSection(data: data),
-            const SizedBox(height: AppSpacing.lg),
-            QuickSummarySection(data: data),
             const SizedBox(height: AppSpacing.xxl),
             Text('Résumé du cycle', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: AppSpacing.md),
             _CycleSummaryGrid(data: data),
+            const SizedBox(height: AppSpacing.xl),
+            const IndicatorsSection(),
+            const SizedBox(height: AppSpacing.xl),
+            const CreditsSummaryCard(),
+            const SizedBox(height: AppSpacing.lg),
+            const CreditAdviceCard(),
+            const SizedBox(height: AppSpacing.lg),
+            const ProjectPriorityCard(),
             const SizedBox(height: AppSpacing.xxl),
             _UpcomingChargesSection(data: data),
             if (data.declaredBankBalanceCents != null) ...[
@@ -242,8 +248,7 @@ class _ArgentLibreCard extends StatelessWidget {
       child: SizedBox(
         width: double.infinity,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xxl, AppSpacing.xl),
           child: Stack(
             children: [
               // Texture métal brossé : fines rayures diagonales à très
@@ -284,7 +289,7 @@ class _ArgentLibreCard extends StatelessWidget {
               ),
               const Positioned.fill(child: ShimmerSheen(borderRadius: AppRadii.xl)),
               Positioned(
-                top: 0,
+                top: 2,
                 left: 0,
                 child: EmvChip(width: 32, color: accent),
               ),
@@ -311,8 +316,7 @@ class _ArgentLibreCard extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.md),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
                     decoration: BoxDecoration(
                       color: statusColor.withValues(alpha: 0.18),
                       borderRadius: BorderRadius.circular(AppRadii.sm),
@@ -335,17 +339,28 @@ class _ArgentLibreCard extends StatelessWidget {
                   const SizedBox(height: AppSpacing.sm),
                   Text(
                     "Disponible jusqu'au ${formatDayMonthFr(data.cycleEnd)}",
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: accent.withValues(alpha: 0.85)),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(color: accent.withValues(alpha: 0.85)),
                   ),
                 ],
               ),
               Positioned(
-                top: 0,
+                top: 2,
                 right: 0,
-                child: BudgetPilotMark(size: 22, color: accent.withValues(alpha: 0.65)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'PREMIUM',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: accent.withValues(alpha: 0.55),
+                            letterSpacing: 2,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    BudgetPilotMark(size: 20, color: accent.withValues(alpha: 0.65)),
+                  ],
+                ),
               ),
             ],
           ),
@@ -374,8 +389,7 @@ class _BrushedMetalPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _BrushedMetalPainter oldDelegate) =>
-      oldDelegate.brightness != brightness;
+  bool shouldRepaint(covariant _BrushedMetalPainter oldDelegate) => oldDelegate.brightness != brightness;
 }
 
 /// "1 revenu" / "3 prélèvements" — jamais de pourcentage sous les cartes du
@@ -490,8 +504,7 @@ class _SummaryTile extends StatelessWidget {
             Container(
               width: 34,
               height: 34,
-              decoration:
-                  BoxDecoration(color: item.color.withValues(alpha: 0.2), shape: BoxShape.circle),
+              decoration: BoxDecoration(color: item.color.withValues(alpha: 0.2), shape: BoxShape.circle),
               child: Icon(item.icon, color: item.color, size: 17),
             ),
             const SizedBox(width: AppSpacing.sm),
@@ -561,10 +574,7 @@ class _UpcomingChargesSection extends StatelessWidget {
                   Expanded(
                     child: Text(
                       'Aucune échéance à venir',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(color: colorScheme.onSurfaceVariant),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                     ),
                   ),
                 ],
@@ -621,10 +631,7 @@ class _UpcomingChargeCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(formatDayMonthFr(charge.expectedDate),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant)),
                       const SizedBox(width: AppSpacing.xs),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -633,8 +640,10 @@ class _UpcomingChargeCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(AppRadii.sm),
                         ),
                         child: Text(presentation.label,
-                            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: presentation.color, fontWeight: FontWeight.w600)),
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(color: presentation.color, fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),
@@ -660,15 +669,21 @@ class _DeclaredBalanceRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // Couleur d'alerte discrète (le même orange que les charges, jamais le
+    // rouge réservé aux cas réellement problématiques) quand le solde
+    // déclaré est à découvert. Ce solde de départ est déjà intégré à
+    // l'Argent libre affiché plus haut (formule centrale) — cette ligne
+    // reste affichée séparément comme la donnée persistée d'origine.
+    final color = cents < 0 ? CategoryColors.fixedExpense : colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          Icon(Icons.account_balance_outlined, size: 16, color: colorScheme.onSurfaceVariant),
+          Icon(Icons.account_balance_outlined, size: 16, color: color),
           const SizedBox(width: 8),
           Text(
             'Solde bancaire déclaré : ${formatCentsAsEuro(cents)}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
           ),
         ],
       ),

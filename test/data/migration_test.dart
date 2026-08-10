@@ -42,7 +42,14 @@ void main() {
       expectedDate: DateTime(2025, 1, 5),
     );
 
+    // La base est d'abord créée avec le schéma courant complet (onCreate),
+    // puis on retire tout ce qui n'existait pas encore en v1 pour simuler
+    // fidèlement un appareil resté bloqué à cette version — sans quoi
+    // `addColumn` échouerait plus loin sur des colonnes déjà présentes.
     await db.customStatement('ALTER TABLE budget_cycles DROP COLUMN name');
+    await db.customStatement('ALTER TABLE fixed_expenses DROP COLUMN linked_credit_id');
+    await db.customStatement('DROP TABLE notification_logs');
+    await db.customStatement('DROP TABLE credits');
     await db.customStatement('PRAGMA user_version = 1');
     await db.close();
 
@@ -62,8 +69,13 @@ void main() {
     expect(data.fixedExpenses.singleWhere((e) => e.id == chargeId).name, 'Loyer');
     expect(data.fixedExpenses.singleWhere((e) => e.id == chargeId).expectedAmountCents, 70000);
 
+    // La base migre jusqu'à la version de schéma courante (7), pas
+    // seulement jusqu'à 2 : onUpgrade(1, 7) enchaîne toutes les étapes
+    // (colonne `name`, table `credits`, colonnes organisme/couleur/icône,
+    // jour de prélèvement/assurance/lien de charge/notifications, table
+    // `projects`, puis colonne `priority`).
     final versionRow = await db.customSelect('PRAGMA user_version').getSingle();
-    expect(versionRow.data['user_version'], 2, reason: 'le marqueur de version doit être mis à jour');
+    expect(versionRow.data['user_version'], 7, reason: 'le marqueur de version doit être mis à jour');
 
     await db.close();
   });

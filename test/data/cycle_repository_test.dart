@@ -56,8 +56,7 @@ void main() {
   });
 
   test('createIncome, updateIncome puis deleteIncome', () async {
-    final cycleId =
-        await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
 
     final incomeId = await repository.createIncome(
       cycleId: cycleId,
@@ -92,8 +91,7 @@ void main() {
   });
 
   test('createFixedExpense associe la catégorie choisie', () async {
-    final cycleId =
-        await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
     final categories = await repository.categoriesForType(EntityType.fixedExpense);
     expect(categories, isNotEmpty);
     final categoryId = categories.first.id;
@@ -117,8 +115,7 @@ void main() {
   });
 
   test('createVariableExpense puis updateVariableExpense', () async {
-    final cycleId =
-        await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
 
     final id = await repository.createVariableExpense(
       cycleId: cycleId,
@@ -140,8 +137,7 @@ void main() {
   });
 
   test('createSaving puis deleteSaving', () async {
-    final cycleId =
-        await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
 
     final id = await repository.createSaving(
       cycleId: cycleId,
@@ -184,5 +180,109 @@ void main() {
     expect(values.last, 'light');
 
     await subscription.cancel();
+  });
+
+  group('resetAllUserData ("Repartir de zéro")', () {
+    Future<void> seedEverything() async {
+      final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await repository.createIncome(
+        cycleId: cycleId,
+        name: 'Salaire',
+        expectedAmountCents: 300000,
+        expectedDate: DateTime(2026, 1, 1),
+      );
+      await repository.createFixedExpense(
+        cycleId: cycleId,
+        name: 'Loyer',
+        expectedAmountCents: 90000,
+        expectedDate: DateTime(2026, 1, 3),
+      );
+      await repository.createVariableExpense(
+        cycleId: cycleId,
+        amountCents: 5000,
+        date: DateTime(2026, 1, 5),
+      );
+      await repository.createSaving(
+        cycleId: cycleId,
+        name: 'Livret',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 1, 1),
+      );
+      await repository.createCredit(
+        name: 'Voiture',
+        initialAmountCents: 1500000,
+        remainingCapitalCents: 900000,
+        monthlyPaymentCents: 25000,
+        expectedEndDate: DateTime(2029, 1, 1),
+        remainingInstallments: 36,
+      );
+      await repository.createProject(
+        name: 'Voyage',
+        category: ProjectCategory.travel,
+        targetAmountCents: 300000,
+        financingMode: ProjectFinancingMode.cash,
+      );
+      await repository.setThemeMode('dark');
+    }
+
+    test('supprime toutes les données financières et leur historique associé', () async {
+      await seedEverything();
+
+      await repository.resetAllUserData();
+
+      expect(await repository.watchAllCycles().first, isEmpty);
+      expect(await repository.loadCurrentCycleData(), isNull);
+      expect(await repository.loadProjects(), isEmpty);
+      final credits = await (db.select(db.credits)).get();
+      expect(credits, isEmpty);
+      final incomes = await db.select(db.incomes).get();
+      expect(incomes, isEmpty);
+      final fixedExpenses = await db.select(db.fixedExpenses).get();
+      expect(fixedExpenses, isEmpty);
+      final variableExpenses = await db.select(db.variableExpenses).get();
+      expect(variableExpenses, isEmpty);
+      final savings = await db.select(db.savings).get();
+      expect(savings, isEmpty);
+      final notificationLogs = await db.select(db.notificationLogs).get();
+      expect(notificationLogs, isEmpty);
+    });
+
+    test('conserve les préférences (thème) et la configuration technique (catégories)', () async {
+      await seedEverything();
+      final categoriesBefore = await db.select(db.categories).get();
+      expect(categoriesBefore, isNotEmpty);
+
+      await repository.resetAllUserData();
+
+      final themeAfter = await repository.watchThemeMode().first;
+      expect(themeAfter, 'dark');
+      final categoriesAfter = await db.select(db.categories).get();
+      expect(categoriesAfter.length, categoriesBefore.length);
+    });
+
+    test(
+        'revient exactement à l\'état du premier lancement : un nouveau cycle peut être créé normalement '
+        'après la réinitialisation', () async {
+      await seedEverything();
+      await repository.resetAllUserData();
+
+      final id = await repository.createCycle(startDate: DateTime(2026, 6, 1), endDate: DateTime(2026, 6, 30));
+      final data = await repository.loadCurrentCycleData();
+
+      expect(data, isNotNull);
+      expect(data!.cycle.id, id);
+      expect(data.incomes, isEmpty);
+      expect(data.fixedExpenses, isEmpty);
+    });
+
+    test('ne laisse aucune donnée résiduelle même avec plusieurs cycles', () async {
+      await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await repository.createCycle(startDate: DateTime(2026, 2, 1), endDate: DateTime(2026, 2, 28));
+      await seedEverything();
+
+      await repository.resetAllUserData();
+
+      expect(await repository.watchAllCycles().first, isEmpty);
+    });
   });
 }

@@ -110,7 +110,9 @@ void main() {
     await tester.pumpWidget(wrap(_sampleData()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Dépenses'));
+    // "Dépenses" apparaît aussi dans "Mes indicateurs" (V1.2, non cliquable)
+    // — on cible explicitement la tuile cliquable du résumé du cycle.
+    await tester.tap(find.text('Dépenses').first);
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(AppBar, 'Dépenses variables'), findsOneWidget);

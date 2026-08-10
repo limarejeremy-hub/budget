@@ -30,19 +30,36 @@ class BudgetCalculationService {
   /// Exclut les épargnes annulées ou suspendues.
   int calculateTotalSavings(List<SavingEntity> savings) {
     return savings
-        .where((s) =>
-            s.isActive && s.status != SavingStatus.annule && s.status != SavingStatus.suspendue)
+        .where((s) => s.isActive && s.status != SavingStatus.annule && s.status != SavingStatus.suspendue)
         .fold(0, (sum, s) => sum + s.effectiveAmountCents);
   }
 
-  /// reste réel = revenus - charges fixes - dépenses variables - épargne
+  /// Formule centrale et unique de l'argent libre — LA seule utilisée dans
+  /// toute l'application (tableau de bord, détail du cycle, Project
+  /// Planner, simulations, scénarios...) via `DashboardViewData.
+  /// realRemainingCents`, jamais recalculée différemment ailleurs :
+  ///
+  /// argent libre = solde bancaire de départ du cycle
+  ///              + revenus du cycle
+  ///              - charges fixes
+  ///              - dépenses variables
+  ///              - épargne
+  ///
+  /// [startingBalanceCents] est le solde bancaire déclaré au début du
+  /// cycle (`BudgetCycles.declaredBankBalanceCents`) — `0` par défaut
+  /// quand aucun solde n'a été déclaré, jamais une valeur inventée. Il
+  /// n'intervient qu'une seule fois ici : jamais recompté ailleurs, et
+  /// aucune mensualité de crédit ni aucun revenu/charge n'y est mêlé (ce
+  /// sont des flux du cycle, le solde est un point de départ).
   int calculateRealRemaining({
     required List<IncomeEntity> incomes,
     required List<FixedExpenseEntity> fixedExpenses,
     required List<VariableExpenseEntity> variableExpenses,
     required List<SavingEntity> savings,
+    int startingBalanceCents = 0,
   }) {
-    return calculateTotalExpectedIncome(incomes) -
+    return startingBalanceCents +
+        calculateTotalExpectedIncome(incomes) -
         calculateTotalFixedExpenses(fixedExpenses) -
         calculateTotalVariableExpenses(variableExpenses) -
         calculateTotalSavings(savings);
@@ -53,8 +70,7 @@ class BudgetCalculationService {
   /// jamais la déduction du reste réel, sauf pour une charge suspendue).
   int calculateRemainingUnconfirmedCharges(List<FixedExpenseEntity> fixedExpenses) {
     return fixedExpenses
-        .where((e) =>
-            e.isActive && e.status != ChargeStatus.prelevee && e.status != ChargeStatus.suspendue)
+        .where((e) => e.isActive && e.status != ChargeStatus.prelevee && e.status != ChargeStatus.suspendue)
         .fold(0, (sum, e) => sum + e.effectiveAmountCents);
   }
 
@@ -77,10 +93,7 @@ class BudgetCalculationService {
     return realRemainingCents / totalIncomeCents;
   }
 
-  // calculateDeclaredBalanceDifference() est volontairement absente ici.
-  // La formule simplifiée du cahier des charges ne tient pas compte d'un
-  // solde initial, de revenus non reçus ni d'opérations bancaires en
-  // attente : elle sera conçue avec la logique de clôture de cycle (Phase 5).
-  // Les champs nécessaires (declaredBankBalanceCents, finalRealRemainingCents)
-  // restent en base dans BudgetCycles.
+  // finalRealRemainingCents (solde figé à la clôture d'un cycle, distinct
+  // de l'argent libre courant recalculé en continu) reste un champ pour la
+  // logique de clôture de cycle à venir (Phase 5) — non exploité ici.
 }
