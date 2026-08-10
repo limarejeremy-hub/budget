@@ -35,8 +35,10 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: CycleDetailPage(data: data)));
     await tester.pump();
 
-    // L'Argent libre reste affiché tel quel, jamais affecté par le solde
-    // bancaire déclaré (donnée distincte).
+    // Cette page est purement présentationnelle : elle affiche tel quel le
+    // `realRemainingCents` déjà calculé par DashboardViewBuilder (qui, lui,
+    // intègre le solde de départ) — voir budget_calculation_service_test.dart
+    // pour les tests de la formule elle-même.
     expect(find.textContaining(formatCentsAsEuro(data.realRemainingCents)), findsOneWidget);
 
     final valueText = tester.widget<Text>(find.text(formatCentsAsEuro(-18000)));

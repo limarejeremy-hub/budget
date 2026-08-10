@@ -60,8 +60,7 @@ void main() {
       now: today,
       incomes: [
         IncomeEntity(id: 1, cycleId: 1, name: 'Salaire', expectedAmountCents: 245000, expectedDate: today),
-        IncomeEntity(
-            id: 2, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 20)),
+        IncomeEntity(id: 2, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 20)),
       ],
       fixedExpenses: [
         FixedExpenseEntity(
@@ -154,8 +153,7 @@ void main() {
       cycleEnd: cycleEnd,
       now: today,
       incomes: [
-        IncomeEntity(
-            id: 1, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 8)),
+        IncomeEntity(id: 1, cycleId: 1, name: 'Prime', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 8)),
         IncomeEntity(
             id: 2, cycleId: 1, name: 'Trop tard', expectedAmountCents: 5000, expectedDate: DateTime(2026, 8, 20)),
       ],
@@ -163,18 +161,75 @@ void main() {
         FixedExpenseEntity(
             id: 1, cycleId: 1, name: 'Box internet', expectedAmountCents: 4000, expectedDate: DateTime(2026, 8, 9)),
         // Aujourd'hui même : déjà couvert par todayFixedExpenses, pas par "cette semaine".
-        FixedExpenseEntity(
-            id: 2, cycleId: 1, name: 'Aujourdhui', expectedAmountCents: 1000, expectedDate: today),
+        FixedExpenseEntity(id: 2, cycleId: 1, name: 'Aujourdhui', expectedAmountCents: 1000, expectedDate: today),
       ],
       variableExpenses: const [],
       savings: [
-        SavingEntity(
-            id: 1, cycleId: 1, name: 'Livret', expectedAmountCents: 10000, expectedDate: DateTime(2026, 8, 6)),
+        SavingEntity(id: 1, cycleId: 1, name: 'Livret', expectedAmountCents: 10000, expectedDate: DateTime(2026, 8, 6)),
       ],
     );
 
     expect(result.thisWeekIncomes.map((i) => i.name), ['Prime']);
     expect(result.thisWeekFixedExpenses.map((e) => e.name), ['Box internet']);
     expect(result.thisWeekSavings.map((s) => s.name), ['Livret']);
+  });
+
+  test('le solde bancaire déclaré est intégré à realRemainingCents (formule centrale)', () {
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      incomes: [
+        IncomeEntity(id: 1, cycleId: 1, name: 'Jeremy', expectedAmountCents: 424300, expectedDate: cycleStart),
+      ],
+      fixedExpenses: const [],
+      variableExpenses: const [],
+      savings: const [],
+      declaredBankBalanceCents: -58600,
+    );
+
+    // Cas de référence : -58600 + 424300 = 365700.
+    expect(result.realRemainingCents, 365700);
+    // Le solde déclaré reste par ailleurs exposé tel quel pour l'affichage.
+    expect(result.declaredBankBalanceCents, -58600);
+  });
+
+  test('sans solde déclaré, realRemainingCents ne change pas de comportement (0 par défaut)', () {
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      incomes: [
+        IncomeEntity(id: 1, cycleId: 1, name: 'Jeremy', expectedAmountCents: 424300, expectedDate: cycleStart),
+      ],
+      fixedExpenses: const [],
+      variableExpenses: const [],
+      savings: const [],
+    );
+
+    expect(result.realRemainingCents, 424300);
+    expect(result.declaredBankBalanceCents, isNull);
+  });
+
+  test('Project Planner : realRemainingCents (source de currentFreeCashCents) reflète le solde de départ', () {
+    // projects_page.dart lit `dashboard.realRemainingCents` directement comme
+    // `currentFreeCashCents` pour le Project Planner — aucune formule séparée
+    // n'existe côté simulateur/scénarios/faisabilité : ce test documente que
+    // la valeur qu'ils consomment est déjà corrigée par la formule centrale.
+    final result = builder.build(
+      cycleId: 1,
+      cycleStart: cycleStart,
+      cycleEnd: cycleEnd,
+      incomes: [
+        IncomeEntity(id: 1, cycleId: 1, name: 'Jeremy', expectedAmountCents: 400000, expectedDate: cycleStart),
+      ],
+      fixedExpenses: const [],
+      variableExpenses: const [],
+      savings: const [],
+      declaredBankBalanceCents: 50000,
+    );
+
+    final currentFreeCashCents = result.realRemainingCents;
+    expect(currentFreeCashCents, 450000);
   });
 }

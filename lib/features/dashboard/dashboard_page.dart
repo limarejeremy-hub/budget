@@ -668,7 +668,9 @@ class _DeclaredBalanceRow extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     // Couleur d'alerte discrète (le même orange que les charges, jamais le
     // rouge réservé aux cas réellement problématiques) quand le solde
-    // déclaré est à découvert — information distincte de l'Argent libre.
+    // déclaré est à découvert. Ce solde de départ est déjà intégré à
+    // l'Argent libre affiché plus haut (formule centrale) — cette ligne
+    // reste affichée séparément comme la donnée persistée d'origine.
     final color = cents < 0 ? CategoryColors.fixedExpense : colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),

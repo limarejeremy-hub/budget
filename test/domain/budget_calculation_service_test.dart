@@ -20,8 +20,7 @@ void main() {
         status: status,
       );
 
-  FixedExpenseEntity charge(int cents, {String status = ChargeStatus.aVenir, int? actualCents}) =>
-      FixedExpenseEntity(
+  FixedExpenseEntity charge(int cents, {String status = ChargeStatus.aVenir, int? actualCents}) => FixedExpenseEntity(
         id: 1,
         cycleId: 1,
         name: 'Charge test',
@@ -104,6 +103,154 @@ void main() {
         savings: [],
       );
       expect(avecChargeSuspendue, sansCharge);
+    });
+  });
+
+  // Solde bancaire de départ intégré à l'argent libre : formule centrale
+  // argentLibre = soldeBancaireDebutCycle + revenus - charges - dépenses - épargne.
+  group('calculateRealRemaining avec solde de départ (startingBalanceCents)', () {
+    test('cas de référence obligatoire : -58600 + 424300 = 365700', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(424300)],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: -58600,
+      );
+      expect(result, 365700);
+    });
+
+    test('solde de départ négatif réduit naturellement l\'argent libre', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(424300)],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: -58600,
+      );
+      expect(result, lessThan(424300));
+    });
+
+    test('solde de départ positif augmente naturellement l\'argent libre : 500 + 4000 = 4500 €', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(400000)],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: 50000,
+      );
+      expect(result, 450000);
+    });
+
+    test('solde de départ nul (ou non déclaré) : comportement identique à avant, valeur par défaut 0', () {
+      final avecZeroExplicite = service.calculateRealRemaining(
+        incomes: [income(500000)],
+        fixedExpenses: [charge(200000)],
+        variableExpenses: [variable(50000)],
+        savings: [saving(80000)],
+        startingBalanceCents: 0,
+      );
+      final sansParametre = service.calculateRealRemaining(
+        incomes: [income(500000)],
+        fixedExpenses: [charge(200000)],
+        variableExpenses: [variable(50000)],
+        savings: [saving(80000)],
+      );
+      expect(avecZeroExplicite, sansParametre);
+      expect(sansParametre, 170000);
+    });
+
+    test('revenus combinés à un solde de départ négatif', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(300000), income(100000)],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: -50000,
+      );
+      expect(result, 350000);
+    });
+
+    test('charges fixes combinées à un solde de départ négatif', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(500000)],
+        fixedExpenses: [charge(100000)],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: -20000,
+      );
+      expect(result, 380000);
+    });
+
+    test('dépenses variables combinées à un solde de départ négatif', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(500000)],
+        fixedExpenses: [],
+        variableExpenses: [variable(30000)],
+        savings: [],
+        startingBalanceCents: -20000,
+      );
+      expect(result, 450000);
+    });
+
+    test('épargne combinée à un solde de départ négatif', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(500000)],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [saving(40000)],
+        startingBalanceCents: -20000,
+      );
+      expect(result, 440000);
+    });
+
+    test('cycle complet : -586 + 4243 - 2000 - 300 - 500 = 857 €', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(424300)],
+        fixedExpenses: [charge(200000)],
+        variableExpenses: [variable(30000)],
+        savings: [saving(50000)],
+        startingBalanceCents: -58600,
+      );
+      expect(result, 85700);
+    });
+
+    test('exemple confirmé de l\'utilisateur : revenus 4243 €, solde départ -586 €, aucune autre sortie = 3657 €', () {
+      final result = service.calculateRealRemaining(
+        incomes: [income(424300)],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: -58600,
+      );
+      expect(result, 365700);
+    });
+
+    test(
+        'absence de double comptage : le solde de départ n\'intervient qu\'une seule fois, quel que soit le nombre de flux',
+        () {
+      final soldeSeul = service.calculateRealRemaining(
+        incomes: [],
+        fixedExpenses: [],
+        variableExpenses: [],
+        savings: [],
+        startingBalanceCents: -58600,
+      );
+      expect(soldeSeul, -58600);
+
+      // Ajouter plusieurs revenus, charges, dépenses et épargnes ne doit
+      // jamais réintroduire le solde de départ une deuxième fois : la
+      // différence entre deux appels ne dépend que des flux ajoutés, jamais
+      // du solde (identique dans les deux appels).
+      final avecFlux = service.calculateRealRemaining(
+        incomes: [income(100000), income(50000)],
+        fixedExpenses: [charge(30000), charge(20000)],
+        variableExpenses: [variable(10000)],
+        savings: [saving(15000)],
+        startingBalanceCents: -58600,
+      );
+      const fluxNets = 100000 + 50000 - 30000 - 20000 - 10000 - 15000;
+      expect(avecFlux - soldeSeul, fluxNets);
     });
   });
 

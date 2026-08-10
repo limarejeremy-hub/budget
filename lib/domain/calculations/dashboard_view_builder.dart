@@ -36,6 +36,7 @@ class DashboardViewBuilder {
       fixedExpenses: fixedExpenses,
       variableExpenses: variableExpenses,
       savings: savings,
+      startingBalanceCents: declaredBankBalanceCents ?? 0,
     );
 
     final ratio = _calculationService.remainingRatio(
@@ -46,8 +47,7 @@ class DashboardViewBuilder {
     // Une charge est "à surveiller" tant qu'elle n'est ni confirmée ni
     // suspendue — son statut ne change jamais son inclusion dans le reste réel.
     final unconfirmed = fixedExpenses
-        .where(
-            (e) => e.isActive && e.status != ChargeStatus.prelevee && e.status != ChargeStatus.suspendue)
+        .where((e) => e.isActive && e.status != ChargeStatus.prelevee && e.status != ChargeStatus.suspendue)
         .toList()
       ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
 
@@ -60,8 +60,7 @@ class DashboardViewBuilder {
     final todayIncomes = incomes.where((i) => i.isActive && isToday(i.expectedDate)).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     final alerts = fixedExpenses
-        .where((e) =>
-            e.isActive && (e.status == ChargeStatus.incident || e.status == ChargeStatus.aConfirmer))
+        .where((e) => e.isActive && (e.status == ChargeStatus.incident || e.status == ChargeStatus.aConfirmer))
         .toList()
       ..sort((a, b) => a.expectedDate.compareTo(b.expectedDate));
 
@@ -89,8 +88,7 @@ class DashboardViewBuilder {
       realRemainingCents: realRemaining,
       remainingRatio: ratio,
       unconfirmedChargesCount: unconfirmed.length,
-      unconfirmedChargesTotalCents:
-          _calculationService.calculateRemainingUnconfirmedCharges(fixedExpenses),
+      unconfirmedChargesTotalCents: _calculationService.calculateRemainingUnconfirmedCharges(fixedExpenses),
       nextChargeToCheck: unconfirmed.isEmpty ? null : unconfirmed.first,
       upcomingCharges: unconfirmed.take(3).toList(),
       declaredBankBalanceCents: declaredBankBalanceCents,

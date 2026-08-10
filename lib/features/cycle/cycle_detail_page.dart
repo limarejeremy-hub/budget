@@ -37,9 +37,10 @@ class CycleDetailPage extends StatelessWidget {
                 cents: data.declaredBankBalanceCents!,
                 // Couleur d'alerte discrète (le même orange que les charges,
                 // jamais le rouge réservé aux cas réellement problématiques)
-                // quand le solde déclaré est à découvert — une information
-                // distincte de l'Argent libre, dont la formule n'est jamais
-                // modifiée par ce solde.
+                // quand le solde déclaré est à découvert. Ce solde de départ
+                // est bien intégré à l'Argent libre ci-dessus (formule
+                // centrale de BudgetCalculationService) — cette ligne reste
+                // affichée séparément comme la donnée persistée d'origine.
                 valueColor: data.declaredBankBalanceCents! < 0 ? CategoryColors.fixedExpense : null,
               ),
             ],
