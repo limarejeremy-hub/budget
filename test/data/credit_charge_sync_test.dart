@@ -175,7 +175,7 @@ void main() {
   });
 
   test('createCycle génère automatiquement les charges de tous les crédits actifs', () async {
-    await seedCycle();
+    final firstCycleId = await seedCycle();
     await repository.createCredit(
       name: 'Voiture',
       initialAmountCents: 1500000,
@@ -185,6 +185,9 @@ void main() {
       remainingInstallments: 36,
     );
 
+    // Un seul cycle 'ouvert' à la fois (§17) : clôturer le premier avant
+    // de créer le second.
+    await repository.closeCycle(firstCycleId);
     await repository.createCycle(startDate: DateTime(2026, 2, 1), endDate: DateTime(2026, 2, 28));
 
     final data = await repository.loadCurrentCycleData();
@@ -194,7 +197,7 @@ void main() {
   });
 
   test('createCycle ne génère rien pour un crédit terminé (isActive = false)', () async {
-    await seedCycle();
+    final firstCycleId = await seedCycle();
     final creditId = await repository.createCredit(
       name: 'Voiture',
       initialAmountCents: 1500000,
@@ -205,6 +208,7 @@ void main() {
     );
     await repository.setCreditActive(creditId, false);
 
+    await repository.closeCycle(firstCycleId);
     await repository.createCycle(startDate: DateTime(2026, 2, 1), endDate: DateTime(2026, 2, 28));
 
     final data = await repository.loadCurrentCycleData();

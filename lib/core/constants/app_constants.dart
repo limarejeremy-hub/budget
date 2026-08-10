@@ -9,6 +9,13 @@ class AppConstants {
   static const int defaultCycleStartDay = 27;
 }
 
+/// Statuts possibles pour un cycle budgétaire.
+class CycleStatus {
+  CycleStatus._();
+  static const String ouvert = 'ouvert';
+  static const String ferme = 'ferme';
+}
+
 /// Statuts possibles pour un revenu.
 class IncomeStatus {
   IncomeStatus._();

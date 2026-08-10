@@ -5,11 +5,28 @@ import '../../core/providers/dashboard_providers.dart';
 import '../../core/widgets/date_picker_field.dart';
 import '../../core/widgets/euro_amount_field.dart';
 import '../../core/widgets/form_actions_row.dart';
+import '../../data/local/cycle_repository.dart';
 
-/// Parcours de création du premier cycle (ou d'un nouveau cycle) : dates,
-/// nom optionnel, solde bancaire facultatif.
+/// Parcours de création du premier cycle, ou du cycle suivant après clôture
+/// (finalisation du moteur de cycle) : dates, nom optionnel, solde bancaire
+/// facultatif. Quand [initialStartDate]/[initialEndDate] sont fournies
+/// (venant du cycle qui vient d'être clôturé), les champs sont préremplis
+/// mais restent librement modifiables avant validation. [previousCycleId],
+/// quand fourni, déclenche la recopie des revenus/charges/épargnes
+/// récurrents de ce cycle précédent dans le nouveau.
 class CycleCreationPage extends ConsumerStatefulWidget {
-  const CycleCreationPage({super.key});
+  final DateTime? initialStartDate;
+  final DateTime? initialEndDate;
+  final int? suggestedBalanceCents;
+  final int? previousCycleId;
+
+  const CycleCreationPage({
+    super.key,
+    this.initialStartDate,
+    this.initialEndDate,
+    this.suggestedBalanceCents,
+    this.previousCycleId,
+  });
 
   @override
   ConsumerState<CycleCreationPage> createState() => _CycleCreationPageState();
@@ -26,9 +43,20 @@ class _CycleCreationPageState extends ConsumerState<CycleCreationPage> {
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _startDate = DateTime(now.year, now.month, now.day);
-    _endDate = _startDate.add(const Duration(days: 30));
+    if (widget.initialStartDate != null && widget.initialEndDate != null) {
+      _startDate = widget.initialStartDate!;
+      _endDate = widget.initialEndDate!;
+    } else {
+      final now = DateTime.now();
+      _startDate = DateTime(now.year, now.month, now.day);
+      _endDate = _startDate.add(const Duration(days: 30));
+    }
+    // Suggestion éditable uniquement — jamais recopiée sans que
+    // l'utilisateur valide explicitement le formulaire (§12).
+    final suggested = widget.suggestedBalanceCents;
+    if (suggested != null) {
+      _balanceController.text = (suggested / 100).toStringAsFixed(2);
+    }
   }
 
   @override
@@ -58,8 +86,13 @@ class _CycleCreationPageState extends ConsumerState<CycleCreationPage> {
         endDate: _endDate,
         name: name,
         declaredBankBalanceCents: balanceCents,
+        copyRecurringFromCycleId: widget.previousCycleId,
       );
       if (mounted) Navigator.of(context).pop();
+    } on CycleAlreadyOpenException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -76,9 +109,12 @@ class _CycleCreationPageState extends ConsumerState<CycleCreationPage> {
             padding: const EdgeInsets.all(20),
             children: [
               Text(
-                'Un cycle représente une période budgétaire (ex : du 27 du mois au 26 du '
-                'mois suivant). Vous pourrez ensuite ajouter vos revenus, charges, '
-                'dépenses et épargnes.',
+                widget.previousCycleId == null
+                    ? 'Un cycle représente une période budgétaire (ex : du 27 du mois au 26 du '
+                        'mois suivant). Vous pourrez ensuite ajouter vos revenus, charges, '
+                        'dépenses et épargnes.'
+                    : 'Vos revenus, charges fixes et épargnes récurrents actifs sont repris '
+                        'automatiquement — les dépenses variables repartent toujours à 0 €.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 24),

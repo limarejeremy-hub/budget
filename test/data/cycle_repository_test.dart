@@ -155,7 +155,10 @@ void main() {
   });
 
   test('watchAllCycles renvoie tous les cycles du plus récent au plus ancien', () async {
-    await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    final firstId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    // Un seul cycle 'ouvert' à la fois (§17) : le premier doit être
+    // clôturé avant de pouvoir créer le second.
+    await repository.closeCycle(firstId);
     await repository.createCycle(startDate: DateTime(2026, 2, 1), endDate: DateTime(2026, 2, 28));
 
     final cycles = await repository.watchAllCycles().first;
@@ -276,8 +279,11 @@ void main() {
     });
 
     test('ne laisse aucune donnée résiduelle même avec plusieurs cycles', () async {
-      await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      final firstId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await repository.closeCycle(firstId);
       await repository.createCycle(startDate: DateTime(2026, 2, 1), endDate: DateTime(2026, 2, 28));
+      final secondId = (await repository.watchAllCycles().first).firstWhere((c) => c.status == 'ouvert').id;
+      await repository.closeCycle(secondId);
       await seedEverything();
 
       await repository.resetAllUserData();

@@ -64,10 +64,13 @@ void main() {
   });
 
   test('importBackup avec replaceExisting supprime les données existantes avant import', () async {
-    await seedCycle();
+    final firstCycleId = await seedCycle();
     final backup = await repository.exportBackup();
 
-    // Une deuxième saisie, qui ne doit pas survivre au remplacement.
+    // Une deuxième saisie, qui ne doit pas survivre au remplacement — un
+    // seul cycle 'ouvert' à la fois (§17), donc le premier est clôturé
+    // avant d'en créer un second.
+    await repository.closeCycle(firstCycleId);
     await repository.createCycle(startDate: DateTime(2026, 3, 1), endDate: DateTime(2026, 3, 31));
 
     await repository.importBackup(backup, replaceExisting: true);

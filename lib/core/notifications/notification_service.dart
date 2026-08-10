@@ -68,8 +68,7 @@ class NotificationService {
   /// Demande la permission système (Android 13+, `POST_NOTIFICATIONS`) —
   /// jamais bloquant si elle est refusée.
   Future<bool> requestPermission() async {
-    final androidPlugin =
-        _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     try {
       final granted = await androidPlugin?.requestNotificationsPermission();
       return granted ?? false;
@@ -220,6 +219,24 @@ class NotificationService {
     } catch (_) {
       // Environnement sans plugin natif (tests) ou permission refusée —
       // jamais bloquant.
+    }
+  }
+
+  /// Annule les rappels programmés pour des charges qui n'appartiennent
+  /// plus au cycle courant (finalisation du moteur de cycle, §15) : ces
+  /// rappels deviennent obsolètes dès qu'un cycle est clôturé — y compris
+  /// avant sa date de fin prévue (clôture manuelle anticipée), où certains
+  /// pourraient encore être programmés dans le système. Les rappels
+  /// quotidiens (résumé du matin, bilan du soir) ne sont jamais concernés :
+  /// leurs ids stables (101/102) sont automatiquement remplacés dès le
+  /// prochain [scheduleDailyReminders], sans action explicite ici.
+  Future<void> cancelChargeReminders(Iterable<int> chargeIds) async {
+    for (final id in chargeIds) {
+      try {
+        await _plugin.cancel(2000 + id);
+      } catch (_) {
+        // Environnement sans plugin natif (tests) — jamais bloquant.
+      }
     }
   }
 

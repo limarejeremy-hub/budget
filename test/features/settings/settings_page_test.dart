@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:budgetpilot/core/providers/database_provider.dart';
 import 'package:budgetpilot/data/local/cycle_repository.dart';
@@ -11,6 +12,10 @@ import 'package:budgetpilot/features/settings/settings_page.dart';
 void main() {
   late AppDatabase db;
   late CycleRepository repository;
+
+  setUpAll(() async {
+    await initializeDateFormatting('fr_FR', null);
+  });
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -80,12 +85,68 @@ void main() {
     expect(find.text('Charger les données de démonstration'), findsNothing);
 
     for (var i = 0; i < 7; i++) {
-      await tester.tap(find.text('Version 1.1.0'));
+      await tester.tap(find.text('Version 1.3.0'));
       await tester.pump();
     }
     await tester.pumpAndSettle();
 
     expect(find.text('Charger les données de démonstration'), findsOneWidget);
+  });
+
+  group('Paramètres > Cycle (§16)', () {
+    testWidgets('aucun cycle ouvert : propose de créer un nouveau cycle, sans préremplissage', (tester) async {
+      useTallViewport(tester);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cycle actuel'), findsNothing);
+      expect(find.text('Créer un nouveau cycle'), findsOneWidget);
+
+      await tester.tap(find.text('Créer un nouveau cycle'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AppBar, 'Créer mon cycle budgétaire'), findsOneWidget);
+      final balanceField = find.widgetWithText(TextFormField, 'Solde bancaire déclaré (facultatif)');
+      expect(tester.widget<TextFormField>(balanceField).controller!.text, isEmpty);
+    });
+
+    testWidgets('un cycle ouvert : affiche "Cycle actuel" et permet de le terminer', (tester) async {
+      useTallViewport(tester);
+      await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cycle actuel'), findsOneWidget);
+      expect(find.text('1 janvier 2026 → 31 janvier 2026'), findsOneWidget);
+      expect(find.text('Créer un nouveau cycle'), findsNothing);
+
+      await tester.tap(find.text('Terminer le cycle'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AppBar, 'Terminer le cycle'), findsOneWidget);
+    });
+
+    testWidgets('après clôture du dernier cycle : "Créer un nouveau cycle" est préempli à partir de celui-ci',
+        (tester) async {
+      useTallViewport(tester);
+      final cycleId = await repository.createCycle(
+        startDate: DateTime(2026, 1, 1),
+        endDate: DateTime(2026, 1, 31),
+        declaredBankBalanceCents: 5000,
+      );
+      await repository.closeCycle(cycleId);
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cycle actuel'), findsNothing);
+      await tester.tap(find.text('Créer un nouveau cycle'));
+      await tester.pumpAndSettle();
+
+      // Nouveau cycle suggéré du 1er au 31 février 2026 (même durée, jour
+      // suivant la fin du précédent) — préempli mais toujours modifiable.
+      expect(find.text('1 février 2026'), findsOneWidget);
+      expect(find.text('3 mars 2026'), findsOneWidget);
+    });
   });
 
   group('"Repartir de zéro" (Paramètres > Données)', () {

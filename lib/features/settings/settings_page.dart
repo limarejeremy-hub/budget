@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/database_provider.dart';
+import '../../core/providers/entries_providers.dart';
 import '../../core/providers/settings_providers.dart';
 import '../../core/providers/shell_providers.dart';
 import '../../core/routing/app_page_route.dart';
@@ -15,7 +17,12 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/budgetpilot_logo.dart';
 import '../../data/local/cycle_repository.dart';
 import '../../data/local/demo_data_seeder.dart';
+import '../../domain/calculations/cycle_close_service.dart';
+import '../cycle/cycle_closure_page.dart';
+import '../cycle/cycle_creation_page.dart';
 import 'documentation_page.dart';
+
+const _cycleCloseService = CycleCloseService();
 
 /// Onglet "Paramètres" : sauvegarde locale (export/import JSON), thème,
 /// documentation, version, et un menu développeur caché (7 appuis sur le
@@ -256,6 +263,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               title: Text('Langue'),
               subtitle: Text('Français (France)'),
             ),
+            const _SectionHeader('Cycle'),
+            const _CycleSection(),
             const _SectionHeader('Thème'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -307,7 +316,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text(AppConstants.appName),
-              subtitle: const Text('Version 1.1.0'),
+              subtitle: const Text('Version 1.3.0'),
               onTap: _onVersionTap,
             ),
             if (_devMenuUnlocked) ...[
@@ -344,6 +353,67 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// "Paramètres > Cycle" (finalisation du moteur de cycle, §16) : cycle
+/// actuel et accès à sa clôture, ou proposition directe de créer un nouveau
+/// cycle si aucun n'est ouvert — préempli à partir du dernier cycle
+/// clôturé quand il y en a un (§4, §12), toujours modifiable avant
+/// validation.
+class _CycleSection extends ConsumerWidget {
+  const _CycleSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dashboardAsync = ref.watch(dashboardProvider);
+    final data = dashboardAsync.valueOrNull;
+
+    if (data != null) {
+      return Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.event_note_outlined),
+            title: const Text('Cycle actuel'),
+            subtitle: Text('${formatDayMonthFr(data.cycleStart)} → ${formatDayMonthFr(data.cycleEnd)}'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.event_available_outlined),
+            title: const Text('Terminer le cycle'),
+            onTap: () => Navigator.of(context).push(AppPageRoute(builder: (_) => const CycleClosurePage())),
+          ),
+        ],
+      );
+    }
+
+    final cycles = ref.watch(allCyclesProvider).valueOrNull ?? const [];
+    final closedCycles = cycles.where((c) => c.status == CycleStatus.ferme);
+    final lastClosed = closedCycles.isEmpty ? null : closedCycles.first; // déjà trié du plus récent au plus ancien
+
+    return ListTile(
+      leading: const Icon(Icons.add_circle_outline),
+      title: const Text('Créer un nouveau cycle'),
+      onTap: () {
+        DateTime? start;
+        DateTime? end;
+        if (lastClosed != null) {
+          start = _cycleCloseService.nextCycleStartDate(lastClosed.endDate);
+          end = _cycleCloseService.nextCycleEndDate(
+            previousStartDate: lastClosed.startDate,
+            previousEndDate: lastClosed.endDate,
+            newStartDate: start,
+          );
+        }
+        Navigator.of(context).push(AppPageRoute(
+          builder: (_) => CycleCreationPage(
+            initialStartDate: start,
+            initialEndDate: end,
+            suggestedBalanceCents: lastClosed?.finalRealRemainingCents,
+            previousCycleId: lastClosed?.id,
+          ),
+        ));
+      },
     );
   }
 }

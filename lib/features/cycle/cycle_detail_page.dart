@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../core/formatting/currency_formatter.dart';
+import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
 import '../../domain/models/dashboard_view_data.dart';
+import 'cycle_closure_page.dart';
 
 /// Détail du cycle courant, ouvert depuis la carte "Argent Libre" du
 /// tableau de bord. Purement présentationnel : réutilise les totaux déjà
@@ -44,6 +46,14 @@ class CycleDetailPage extends StatelessWidget {
                 valueColor: data.declaredBankBalanceCents! < 0 ? CategoryColors.fixedExpense : null,
               ),
             ],
+            const SizedBox(height: AppSpacing.xxxl),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(AppPageRoute(
+                builder: (_) => const CycleClosurePage(),
+              )),
+              icon: const Icon(Icons.event_available_outlined),
+              label: const Text('Terminer le cycle'),
+            ),
           ],
         ),
       ),

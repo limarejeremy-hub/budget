@@ -2,7 +2,9 @@ import 'package:drift/drift.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/constants/default_categories.dart';
+import '../../domain/calculations/budget_calculation_service.dart';
 import '../../domain/calculations/credit_auto_update_service.dart';
+import '../../domain/calculations/cycle_close_service.dart';
 import 'converters/entity_mappers.dart';
 import 'database.dart';
 
@@ -10,11 +12,37 @@ import 'database.dart';
 /// la structure change de façon incompatible.
 const int backupFormatVersion = 1;
 
+const _budgetCalculationService = BudgetCalculationService();
+const _cycleCloseService = CycleCloseService();
+
 /// Levée lorsqu'un fichier de sauvegarde ne correspond pas au format attendu.
 /// Le message est destiné à être affiché directement à l'utilisateur.
 class BackupValidationException implements Exception {
   final String message;
   const BackupValidationException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+/// Levée par [CycleRepository.createCycle] quand un cycle 'ouvert' existe
+/// déjà — impossible d'avoir deux cycles ouverts simultanément (finalisation
+/// du moteur de cycle, §17). Le message est destiné à être affiché
+/// directement à l'utilisateur.
+class CycleAlreadyOpenException implements Exception {
+  final String message;
+  const CycleAlreadyOpenException(
+      [this.message = 'Un cycle est déjà ouvert. Terminez-le avant d\'en créer un nouveau.']);
+
+  @override
+  String toString() => message;
+}
+
+/// Levée par [CycleRepository.closeCycle] quand le cycle visé n'existe pas
+/// ou n'est plus ouvert (déjà clôturé) — jamais clôturé deux fois.
+class CycleNotOpenException implements Exception {
+  final String message;
+  const CycleNotOpenException([this.message = 'Ce cycle est introuvable ou déjà clôturé.']);
 
   @override
   String toString() => message;
@@ -45,7 +73,7 @@ class CycleRepository {
 
   Future<BudgetCycle?> _fetchCurrentCycle() {
     return (db.select(db.budgetCycles)
-          ..where((c) => c.status.equals('ouvert'))
+          ..where((c) => c.status.equals(CycleStatus.ouvert))
           ..orderBy([(c) => OrderingTerm.desc(c.startDate)])
           ..limit(1))
         .getSingleOrNull();
@@ -123,36 +151,150 @@ class CycleRepository {
   // Cycles
   // ---------------------------------------------------------------------
 
+  /// Crée un nouveau cycle. Impossible tant qu'un autre cycle est encore
+  /// 'ouvert' (finalisation du moteur de cycle, §17) : lève
+  /// [CycleAlreadyOpenException] plutôt que de créer un doublon silencieux.
+  ///
+  /// [copyRecurringFromCycleId], quand fourni (démarrage du cycle suivant
+  /// après clôture), recopie dans le nouveau cycle les revenus, charges
+  /// fixes et épargnes marqués récurrents et actifs de ce cycle précédent —
+  /// jamais les entrées ponctuelles, jamais les dépenses variables (§5, §6,
+  /// §8, §9). Toute l'opération est atomique : soit le cycle et toutes ses
+  /// entrées recopiées existent, soit rien n'est créé (§18).
   Future<int> createCycle({
     required DateTime startDate,
     required DateTime endDate,
     String? name,
     int? declaredBankBalanceCents,
-  }) async {
-    await ensureDefaultCategories();
-    final cycleId = await db.into(db.budgetCycles).insert(BudgetCyclesCompanion.insert(
-          startDate: startDate,
-          endDate: endDate,
-          name: Value(name),
-          declaredBankBalanceCents: Value(declaredBankBalanceCents),
-        ));
+    int? copyRecurringFromCycleId,
+  }) {
+    return db.transaction(() async {
+      final existingOpen = await _fetchCurrentCycle();
+      if (existingOpen != null) {
+        throw const CycleAlreadyOpenException();
+      }
 
-    // Automatisation mensuelle (V0.9) : chaque nouveau cycle génère
-    // automatiquement la charge mensuelle de tous les crédits actifs —
-    // l'utilisateur ne recrée jamais une charge de crédit à la main.
-    final activeCredits = await (db.select(db.credits)..where((c) => c.isActive.equals(true))).get();
-    for (final credit in activeCredits) {
-      await _syncLinkedChargeForCycle(
-        cycleId: cycleId,
-        cycleStart: startDate,
-        creditId: credit.id,
-        name: credit.name,
-        monthlyPaymentCents: credit.monthlyPaymentCents,
-        paymentDayOfMonth: credit.paymentDayOfMonth,
-      );
+      await ensureDefaultCategories();
+      final cycleId = await db.into(db.budgetCycles).insert(BudgetCyclesCompanion.insert(
+            startDate: startDate,
+            endDate: endDate,
+            name: Value(name),
+            declaredBankBalanceCents: Value(declaredBankBalanceCents),
+          ));
+
+      // Automatisation mensuelle (V0.9) : chaque nouveau cycle génère
+      // automatiquement la charge mensuelle de tous les crédits actifs —
+      // l'utilisateur ne recrée jamais une charge de crédit à la main. Les
+      // crédits eux-mêmes ne sont jamais dupliqués ni décrémentés ici (§10) :
+      // seule leur charge mensuelle est (re)générée pour ce nouveau cycle.
+      final activeCredits = await (db.select(db.credits)..where((c) => c.isActive.equals(true))).get();
+      for (final credit in activeCredits) {
+        await _syncLinkedChargeForCycle(
+          cycleId: cycleId,
+          cycleStart: startDate,
+          creditId: credit.id,
+          name: credit.name,
+          monthlyPaymentCents: credit.monthlyPaymentCents,
+          paymentDayOfMonth: credit.paymentDayOfMonth,
+        );
+      }
+
+      if (copyRecurringFromCycleId != null) {
+        await _copyRecurringEntries(fromCycleId: copyRecurringFromCycleId, toCycleId: cycleId);
+      }
+
+      return cycleId;
+    });
+  }
+
+  /// Recopie les revenus, charges fixes (hors charges liées à un crédit,
+  /// déjà générées séparément) et épargnes marqués récurrents et actifs du
+  /// cycle [fromCycleId] vers [toCycleId] — jamais les entrées ponctuelles
+  /// (§5, §6, §9), jamais les charges désactivées (§6). Chaque entrée
+  /// recopiée utilise sa valeur récurrente la plus récente, une date avancée
+  /// d'un mois avec repli sur le dernier jour valide du mois (§14), et un
+  /// statut remis à sa valeur par défaut ("à venir" / "prévu") — jamais le
+  /// statut ou le montant réel confirmé du cycle précédent.
+  Future<void> _copyRecurringEntries({required int fromCycleId, required int toCycleId}) async {
+    final incomes = await (db.select(db.incomes)
+          ..where((i) => i.cycleId.equals(fromCycleId) & i.isRecurring.equals(true) & i.isActive.equals(true)))
+        .get();
+    for (final income in incomes) {
+      await db.into(db.incomes).insert(IncomesCompanion.insert(
+            cycleId: toCycleId,
+            name: income.name,
+            expectedAmountCents: income.expectedAmountCents,
+            expectedDate: _cycleCloseService.recurringEntryDateForNextCycle(income.expectedDate),
+            categoryId: Value(income.categoryId),
+            isRecurring: const Value(true),
+          ));
     }
 
-    return cycleId;
+    final fixedExpenses = await (db.select(db.fixedExpenses)
+          ..where((e) =>
+              e.cycleId.equals(fromCycleId) &
+              e.isRecurring.equals(true) &
+              e.isActive.equals(true) &
+              e.linkedCreditId.isNull()))
+        .get();
+    for (final expense in fixedExpenses) {
+      await db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
+            cycleId: toCycleId,
+            name: expense.name,
+            expectedAmountCents: expense.expectedAmountCents,
+            expectedDate: _cycleCloseService.recurringEntryDateForNextCycle(expense.expectedDate),
+            categoryId: Value(expense.categoryId),
+            isRecurring: const Value(true),
+          ));
+    }
+
+    final savings = await (db.select(db.savings)
+          ..where((s) => s.cycleId.equals(fromCycleId) & s.isRecurring.equals(true) & s.isActive.equals(true)))
+        .get();
+    for (final saving in savings) {
+      await db.into(db.savings).insert(SavingsCompanion.insert(
+            cycleId: toCycleId,
+            name: saving.name,
+            expectedAmountCents: saving.expectedAmountCents,
+            expectedDate: _cycleCloseService.recurringEntryDateForNextCycle(saving.expectedDate),
+            isRecurring: const Value(true),
+          ));
+    }
+  }
+
+  /// Clôture le cycle [cycleId] : fige l'argent libre final (formule
+  /// centrale `BudgetCalculationService.calculateRealRemaining`, jamais
+  /// recalculée différemment) et passe son statut à 'ferme'. Ses revenus,
+  /// charges, dépenses, épargnes et soldes restent inchangés pour toujours
+  /// (§3) — cette méthode ne touche jamais que la ligne du cycle lui-même.
+  /// Lève [CycleNotOpenException] si le cycle n'existe pas ou n'est plus
+  /// ouvert (jamais clôturé deux fois).
+  Future<void> closeCycle(int cycleId) {
+    return db.transaction(() async {
+      final cycle = await (db.select(db.budgetCycles)..where((c) => c.id.equals(cycleId))).getSingleOrNull();
+      if (cycle == null || cycle.status != CycleStatus.ouvert) {
+        throw const CycleNotOpenException();
+      }
+
+      final incomes = await (db.select(db.incomes)..where((i) => i.cycleId.equals(cycleId))).get();
+      final fixedExpenses = await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycleId))).get();
+      final variableExpenses = await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycleId))).get();
+      final savings = await (db.select(db.savings)..where((s) => s.cycleId.equals(cycleId))).get();
+
+      final finalRemaining = _budgetCalculationService.calculateRealRemaining(
+        incomes: incomes.map(incomeFromRow).toList(),
+        fixedExpenses: fixedExpenses.map(fixedExpenseFromRow).toList(),
+        variableExpenses: variableExpenses.map(variableExpenseFromRow).toList(),
+        savings: savings.map(savingFromRow).toList(),
+        startingBalanceCents: cycle.declaredBankBalanceCents ?? 0,
+      );
+
+      await (db.update(db.budgetCycles)..where((c) => c.id.equals(cycleId))).write(BudgetCyclesCompanion(
+        status: const Value(CycleStatus.ferme),
+        closedAt: Value(DateTime.now()),
+        finalRealRemainingCents: Value(finalRemaining),
+      ));
+    });
   }
 
   // ---------------------------------------------------------------------
