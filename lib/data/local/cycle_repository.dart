@@ -938,6 +938,38 @@ class CycleRepository {
   }
 
   // ---------------------------------------------------------------------
+  // Repartir de zéro (Paramètres > Données)
+  // ---------------------------------------------------------------------
+
+  /// Supprime toutes les données financières de l'utilisateur — cycles,
+  /// revenus, charges, dépenses, épargnes, crédits, projets, ainsi que
+  /// l'historique de notifications/confirmations qui leur est associé — pour
+  /// revenir exactement à l'état du tout premier lancement de BudgetPilot.
+  ///
+  /// Conserve toujours : les préférences d'apparence/langue/paramètres
+  /// généraux (`AppSettingsTable` — thème, devise, cycle de prélèvement,
+  /// notifications...) et la taxonomie de catégories (`Categories`), qui ne
+  /// sont pas des données financières saisies par l'utilisateur mais de la
+  /// configuration de l'application.
+  ///
+  /// Tout est supprimé dans une seule transaction — soit tout disparaît,
+  /// soit rien ne change. L'ordre de suppression respecte les dépendances
+  /// entre tables (une table n'est vidée qu'après celles qui la référencent).
+  Future<void> resetAllUserData() {
+    return db.transaction(() async {
+      await db.delete(db.notificationLogs).go();
+      await db.delete(db.variableExpenses).go();
+      await db.delete(db.savings).go();
+      await db.delete(db.fixedExpenses).go();
+      await db.delete(db.incomes).go();
+      await db.delete(db.projects).go();
+      await db.delete(db.credits).go();
+      await db.delete(db.budgetCycles).go();
+      await db.delete(db.recurringTemplates).go();
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // Sauvegarde (export / import JSON local)
   // ---------------------------------------------------------------------
 
