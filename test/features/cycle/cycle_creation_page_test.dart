@@ -204,13 +204,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Un cycle est déjà ouvert. Terminez-le avant d\'en créer un nouveau.'), findsOneWidget);
-      final cycles = await repository.watchAllCycles().first;
+      // Requête ponctuelle plutôt que watchAllCycles().first : ce dernier
+      // s'abonne à un flux Drift natif dont l'annulation programme un
+      // timer interne qui reste "pending" en fin de testWidgets.
+      final cycles = await db.select(db.budgetCycles).get();
       expect(cycles, hasLength(1));
-
-      // Laisse le SnackBar se fermer avant la fin du test — sinon son
-      // minuteur d'auto-fermeture reste actif et bloque l'arrêt du banc de
-      // test (pumpAndSettle ne fait pas avancer les minuteurs en attente).
-      await tester.pump(const Duration(seconds: 5));
     });
   });
 }
