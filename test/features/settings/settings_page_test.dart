@@ -38,12 +38,24 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
+  // Paramètres > Cycle observe des flux Drift (StreamProvider.autoDispose) :
+  // à la fin de chaque test, la dépose automatique de l'arbre de widgets
+  // planifie un Timer interne à Drift pour fermer proprement ces flux. Sans
+  // ce flush explicite, ce Timer reste "en attente" au moment où le banc de
+  // test vérifie ses invariants et fait échouer le test suivant.
+  Future<void> flushProviderDisposal(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  }
+
   testWidgets('le thème système est sélectionné par défaut', (tester) async {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
     final segmented = tester.widget<SegmentedButton<ThemeMode>>(find.byType(SegmentedButton<ThemeMode>));
     expect(segmented.selected, {ThemeMode.system});
+
+    await flushProviderDisposal(tester);
   });
 
   testWidgets('changer de thème persiste le choix', (tester) async {
@@ -55,6 +67,8 @@ void main() {
 
     final segmented = tester.widget<SegmentedButton<ThemeMode>>(find.byType(SegmentedButton<ThemeMode>));
     expect(segmented.selected, {ThemeMode.dark});
+
+    await flushProviderDisposal(tester);
   });
 
   testWidgets('Documentation ouvre la page de documentation', (tester) async {
@@ -71,6 +85,8 @@ void main() {
 
     expect(find.widgetWithText(AppBar, 'Documentation'), findsOneWidget);
     expect(find.text('Utiliser BudgetPilot au quotidien'), findsOneWidget);
+
+    await flushProviderDisposal(tester);
   });
 
   testWidgets('7 appuis sur la version révèlent le menu développeur', (tester) async {
@@ -91,6 +107,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Charger les données de démonstration'), findsOneWidget);
+
+    await flushProviderDisposal(tester);
   });
 
   group('Paramètres > Cycle (§16)', () {
@@ -108,6 +126,8 @@ void main() {
       expect(find.widgetWithText(AppBar, 'Créer mon cycle budgétaire'), findsOneWidget);
       final balanceField = find.widgetWithText(TextFormField, 'Solde bancaire déclaré (facultatif)');
       expect(tester.widget<TextFormField>(balanceField).controller!.text, isEmpty);
+
+      await flushProviderDisposal(tester);
     });
 
     testWidgets('un cycle ouvert : affiche "Cycle actuel" et permet de le terminer', (tester) async {
@@ -124,6 +144,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.widgetWithText(AppBar, 'Terminer le cycle'), findsOneWidget);
+
+      await flushProviderDisposal(tester);
     });
 
     testWidgets('après clôture du dernier cycle : "Créer un nouveau cycle" est préempli à partir de celui-ci',
@@ -146,6 +168,8 @@ void main() {
       // suivant la fin du précédent) — préempli mais toujours modifiable.
       expect(find.text('1 février 2026'), findsOneWidget);
       expect(find.text('3 mars 2026'), findsOneWidget);
+
+      await flushProviderDisposal(tester);
     });
   });
 
@@ -175,6 +199,8 @@ void main() {
 
       expect(find.text('Données'), findsOneWidget);
       expect(find.text('Repartir de zéro'), findsOneWidget);
+
+      await flushProviderDisposal(tester);
     });
 
     testWidgets('annuler la première confirmation ne supprime rien', (tester) async {
@@ -191,6 +217,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(await db.select(db.budgetCycles).get(), isNotEmpty);
+
+      await flushProviderDisposal(tester);
     });
 
     testWidgets('la seconde confirmation affiche le texte exact requis, annuler ne supprime rien', (tester) async {
@@ -214,6 +242,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(await db.select(db.budgetCycles).get(), isNotEmpty);
+
+      await flushProviderDisposal(tester);
     });
 
     testWidgets('confirmer les deux étapes supprime toutes les données financières', (tester) async {
@@ -234,6 +264,8 @@ void main() {
       final credits = await db.select(db.credits).get();
       expect(credits, isEmpty);
       expect(find.text('Toutes les données ont été supprimées'), findsOneWidget);
+
+      await flushProviderDisposal(tester);
     });
 
     testWidgets('les préférences (thème) survivent à la réinitialisation', (tester) async {
@@ -251,6 +283,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(await repository.watchThemeMode().first, 'dark');
+
+      await flushProviderDisposal(tester);
     });
   });
 }

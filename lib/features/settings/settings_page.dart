@@ -367,16 +367,20 @@ class _CycleSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dashboardAsync = ref.watch(dashboardProvider);
-    final data = dashboardAsync.valueOrNull;
+    // Un seul flux Drift observé ici (plutôt que dashboardProvider en plus) :
+    // le cycle courant se déduit directement de la liste des cycles.
+    final cycles = ref.watch(allCyclesProvider).valueOrNull ?? const [];
+    final openCycles = cycles.where((c) => c.status == CycleStatus.ouvert);
+    final currentCycle = openCycles.isEmpty ? null : openCycles.first;
 
-    if (data != null) {
+    if (currentCycle != null) {
       return Column(
         children: [
           ListTile(
             leading: const Icon(Icons.event_note_outlined),
             title: const Text('Cycle actuel'),
-            subtitle: Text('${formatDayMonthFr(data.cycleStart)} → ${formatDayMonthFr(data.cycleEnd)}'),
+            subtitle:
+                Text('${formatDayMonthFr(currentCycle.startDate)} → ${formatDayMonthFr(currentCycle.endDate)}'),
           ),
           ListTile(
             leading: const Icon(Icons.event_available_outlined),
@@ -387,7 +391,6 @@ class _CycleSection extends ConsumerWidget {
       );
     }
 
-    final cycles = ref.watch(allCyclesProvider).valueOrNull ?? const [];
     final closedCycles = cycles.where((c) => c.status == CycleStatus.ferme);
     final lastClosed = closedCycles.isEmpty ? null : closedCycles.first; // déjà trié du plus récent au plus ancien
 

@@ -206,6 +206,11 @@ void main() {
       expect(find.text('Un cycle est déjà ouvert. Terminez-le avant d\'en créer un nouveau.'), findsOneWidget);
       final cycles = await repository.watchAllCycles().first;
       expect(cycles, hasLength(1));
+
+      // Laisse le SnackBar se fermer avant la fin du test — sinon son
+      // minuteur d'auto-fermeture reste actif et bloque l'arrêt du banc de
+      // test (pumpAndSettle ne fait pas avancer les minuteurs en attente).
+      await tester.pump(const Duration(seconds: 5));
     });
   });
 }
