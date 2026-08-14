@@ -7,6 +7,7 @@ import '../../core/providers/dashboard_providers.dart';
 import '../../core/providers/entries_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/design_tokens.dart';
+import '../../data/local/cycle_repository.dart';
 import '../../domain/calculations/cycle_close_service.dart';
 import '../../domain/models/dashboard_view_data.dart';
 import 'cycle_creation_page.dart';
@@ -47,14 +48,34 @@ class _CycleClosurePageState extends ConsumerState<CycleClosurePage> {
         previousEndDate: data.cycleEnd,
         newStartDate: nextStart,
       );
-      Navigator.of(context).pushReplacement(AppPageRoute(
-        builder: (_) => CycleCreationPage(
-          initialStartDate: nextStart,
-          initialEndDate: nextEnd,
-          suggestedBalanceCents: data.realRemainingCents,
-          previousCycleId: data.cycleId,
+      // pushAndRemoveUntil (et non pushReplacement) : vide toute la pile
+      // jusqu'à l'accueil, y compris l'écran "Détail du cycle" qui a pu
+      // mener ici. Sans ça, annuler la création du cycle suivant renvoyait
+      // vers ce détail figé sur l'ancien cycle (désormais clôturé), sans
+      // aucune action possible — un cul-de-sac (correctif "démarrage du
+      // cycle suivant"). L'accueil, lui, sait toujours proposer la suite
+      // via nextCycleCreationPage.
+      Navigator.of(context).pushAndRemoveUntil(
+        AppPageRoute(
+          builder: (_) => CycleCreationPage(
+            initialStartDate: nextStart,
+            initialEndDate: nextEnd,
+            suggestedBalanceCents: data.realRemainingCents,
+            previousCycleId: data.cycleId,
+          ),
         ),
-      ));
+        (route) => route.isFirst,
+      );
+    } on CycleNotOpenException {
+      // Cycle déjà clôturé entre-temps (double appui, écran resté ouvert
+      // depuis une autre session) — jamais d'exception non gérée qui
+      // laisserait l'utilisateur bloqué sans retour possible.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ce cycle est déjà clôturé.')),
+        );
+        Navigator.of(context).pop();
+      }
     } finally {
       if (mounted) setState(() => _closing = false);
     }

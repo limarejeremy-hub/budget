@@ -9,8 +9,10 @@ import 'package:budgetpilot/core/formatting/currency_formatter.dart';
 import 'package:budgetpilot/core/providers/database_provider.dart';
 import 'package:budgetpilot/data/local/cycle_repository.dart';
 import 'package:budgetpilot/data/local/database.dart';
+import 'package:budgetpilot/domain/models/dashboard_view_data.dart';
 import 'package:budgetpilot/features/cycle/cycle_closure_page.dart';
 import 'package:budgetpilot/features/cycle/cycle_creation_page.dart';
+import 'package:budgetpilot/features/cycle/cycle_detail_page.dart';
 
 /// Écran de clôture de cycle (finalisation du moteur de cycle, §2/§21) :
 /// résumé complet, avertissement charges non confirmées, crédits impactés,
@@ -178,5 +180,52 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Aucun cycle en cours à clôturer.'), findsOneWidget);
+  });
+
+  group('correctif "démarrage du cycle suivant" : plus de cul-de-sac', () {
+    testWidgets(
+        'annuler la création du cycle suivant depuis Détail du cycle → clôturer '
+        'renvoie à la racine, jamais sur le détail figé de l\'ancien cycle', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 2200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      final staleData = DashboardViewData(
+        cycleId: cycleId,
+        cycleStart: DateTime(2026, 1, 1),
+        cycleEnd: DateTime(2026, 1, 31),
+        totalIncomeCents: 0,
+        totalFixedExpensesCents: 0,
+        totalVariableExpensesCents: 0,
+        totalSavingsCents: 0,
+        realRemainingCents: 0,
+        remainingRatio: 0,
+        unconfirmedChargesCount: 0,
+        unconfirmedChargesTotalCents: 0,
+      );
+
+      // Reproduit le parcours réel : Détail du cycle -> Terminer le cycle.
+      await tester.pumpWidget(wrap(CycleDetailPage(data: staleData)));
+      await tester.tap(find.text('Ouvrir'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Terminer le cycle'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Clôturer le cycle'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CycleCreationPage), findsOneWidget);
+      expect(find.byType(CycleDetailPage), findsNothing);
+
+      // Annuler sans finaliser le cycle suivant : avant le correctif, ceci
+      // ramenait sur le Détail du cycle figé sur l'ancien cycle (désormais
+      // clôturé), sans aucune action possible.
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Annuler'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CycleDetailPage), findsNothing);
+      expect(find.byType(CycleCreationPage), findsNothing);
+      expect(find.text('Ouvrir'), findsOneWidget);
+    });
   });
 }

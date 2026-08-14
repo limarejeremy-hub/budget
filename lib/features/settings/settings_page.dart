@@ -17,12 +17,9 @@ import '../../core/theme/design_tokens.dart';
 import '../../core/widgets/budgetpilot_logo.dart';
 import '../../data/local/cycle_repository.dart';
 import '../../data/local/demo_data_seeder.dart';
-import '../../domain/calculations/cycle_close_service.dart';
 import '../cycle/cycle_closure_page.dart';
 import '../cycle/cycle_creation_page.dart';
 import 'documentation_page.dart';
-
-const _cycleCloseService = CycleCloseService();
 
 /// Onglet "Paramètres" : sauvegarde locale (export/import JSON), thème,
 /// documentation, version, et un menu développeur caché (7 appuis sur le
@@ -379,8 +376,7 @@ class _CycleSection extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.event_note_outlined),
             title: const Text('Cycle actuel'),
-            subtitle:
-                Text('${formatDayMonthFr(currentCycle.startDate)} → ${formatDayMonthFr(currentCycle.endDate)}'),
+            subtitle: Text('${formatDayMonthFr(currentCycle.startDate)} → ${formatDayMonthFr(currentCycle.endDate)}'),
           ),
           ListTile(
             leading: const Icon(Icons.event_available_outlined),
@@ -391,32 +387,10 @@ class _CycleSection extends ConsumerWidget {
       );
     }
 
-    final closedCycles = cycles.where((c) => c.status == CycleStatus.ferme);
-    final lastClosed = closedCycles.isEmpty ? null : closedCycles.first; // déjà trié du plus récent au plus ancien
-
     return ListTile(
       leading: const Icon(Icons.add_circle_outline),
       title: const Text('Créer un nouveau cycle'),
-      onTap: () {
-        DateTime? start;
-        DateTime? end;
-        if (lastClosed != null) {
-          start = _cycleCloseService.nextCycleStartDate(lastClosed.endDate);
-          end = _cycleCloseService.nextCycleEndDate(
-            previousStartDate: lastClosed.startDate,
-            previousEndDate: lastClosed.endDate,
-            newStartDate: start,
-          );
-        }
-        Navigator.of(context).push(AppPageRoute(
-          builder: (_) => CycleCreationPage(
-            initialStartDate: start,
-            initialEndDate: end,
-            suggestedBalanceCents: lastClosed?.finalRealRemainingCents,
-            previousCycleId: lastClosed?.id,
-          ),
-        ));
-      },
+      onTap: () => Navigator.of(context).push(AppPageRoute(builder: (_) => nextCycleCreationPage(cycles))),
     );
   }
 }

@@ -3,8 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/formatting/currency_formatter.dart';
 import '../../core/providers/dashboard_providers.dart';
+import '../../core/providers/entries_providers.dart';
 import '../../core/routing/app_page_route.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/charge_status_presentation.dart';
@@ -56,11 +58,20 @@ class DashboardPage extends ConsumerWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
+/// État vide de l'accueil, sans cycle actif. Distingue le tout premier
+/// lancement (aucun historique) de la situation "cycle clôturé, suivant pas
+/// encore créé" — ce second cas doit toujours proposer de continuer plutôt
+/// que de suggérer de recommencer à zéro, y compris après redémarrage de
+/// l'app ou clôture interrompue avant validation du cycle suivant
+/// (correctif "démarrage du cycle suivant").
+class _EmptyState extends ConsumerWidget {
   const _EmptyState();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cycles = ref.watch(allCyclesProvider).valueOrNull ?? const [];
+    final hasClosedCycle = cycles.any((c) => c.status == CycleStatus.ferme);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -72,17 +83,20 @@ class _EmptyState extends StatelessWidget {
             Text('Aucun cycle en cours', style: Theme.of(context).textTheme.titleMedium, textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
-              'Créez votre premier cycle budgétaire pour commencer à saisir vos revenus, '
-              'charges, dépenses et épargnes.',
+              hasClosedCycle
+                  ? 'Votre cycle précédent est clôturé. Démarrez le suivant pour reprendre '
+                      'vos revenus et charges récurrents.'
+                  : 'Créez votre premier cycle budgétaire pour commencer à saisir vos revenus, '
+                      'charges, dépenses et épargnes.',
               style: Theme.of(context).textTheme.bodyMedium,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.of(context).push(AppPageRoute(
-                builder: (_) => const CycleCreationPage(),
+                builder: (_) => nextCycleCreationPage(cycles),
               )),
-              child: const Text('Créer mon premier cycle'),
+              child: Text(hasClosedCycle ? 'Démarrer le prochain cycle' : 'Créer mon premier cycle'),
             ),
           ],
         ),

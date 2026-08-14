@@ -1,11 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/providers/dashboard_providers.dart';
 import '../../core/widgets/date_picker_field.dart';
 import '../../core/widgets/euro_amount_field.dart';
 import '../../core/widgets/form_actions_row.dart';
 import '../../data/local/cycle_repository.dart';
+import '../../data/local/database.dart';
+import '../../domain/calculations/cycle_close_service.dart';
+
+const _cycleCloseService = CycleCloseService();
+
+/// Construit la page de création du prochain cycle à partir de l'historique
+/// des cycles : préemplie (dates sans chevauchement, solde suggéré) à partir
+/// du dernier cycle clôturé s'il y en a un, sinon un cycle vierge. Point
+/// d'entrée unique réutilisé partout où l'utilisateur peut se retrouver
+/// sans cycle actif (accueil, Paramètres > Cycle) — garantit qu'il n'est
+/// jamais bloqué, y compris après une clôture interrompue avant la
+/// validation du cycle suivant (§ correctif "démarrage du cycle suivant").
+CycleCreationPage nextCycleCreationPage(List<BudgetCycle> cycles) {
+  final closedCycles = cycles.where((c) => c.status == CycleStatus.ferme);
+  final lastClosed = closedCycles.isEmpty ? null : closedCycles.first; // déjà trié du plus récent au plus ancien
+  if (lastClosed == null) return const CycleCreationPage();
+
+  final start = _cycleCloseService.nextCycleStartDate(lastClosed.endDate);
+  final end = _cycleCloseService.nextCycleEndDate(
+    previousStartDate: lastClosed.startDate,
+    previousEndDate: lastClosed.endDate,
+    newStartDate: start,
+  );
+  return CycleCreationPage(
+    initialStartDate: start,
+    initialEndDate: end,
+    suggestedBalanceCents: lastClosed.finalRealRemainingCents,
+    previousCycleId: lastClosed.id,
+  );
+}
 
 /// Parcours de création du premier cycle, ou du cycle suivant après clôture
 /// (finalisation du moteur de cycle) : dates, nom optionnel, solde bancaire

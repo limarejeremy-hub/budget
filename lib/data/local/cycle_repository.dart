@@ -111,9 +111,19 @@ class CycleRepository {
         .asyncMap((_) => loadCurrentCycleData());
   }
 
+  Future<List<BudgetCycle>> loadAllCycles() =>
+      (db.select(db.budgetCycles)..orderBy([(c) => OrderingTerm.desc(c.startDate)])).get();
+
   /// Tous les cycles (courant compris), du plus récent au plus ancien.
-  Stream<List<BudgetCycle>> watchAllCycles() {
-    return (db.select(db.budgetCycles)..orderBy([(c) => OrderingTerm.desc(c.startDate)])).watch();
+  /// Basé sur `tableUpdates` plutôt que sur le `.watch()` natif d'une
+  /// requête Drift (comme [watchCurrentCycleData]) : ce dernier programme
+  /// un timer interne à la fermeture de l'abonnement qui reste "pending"
+  /// tant qu'aucune frame supplémentaire n'est pompée — inoffensif en usage
+  /// réel, mais fait échouer `testWidgets` (cf. correctif équivalent sur
+  /// watchCredits()).
+  Stream<List<BudgetCycle>> watchAllCycles() async* {
+    yield await loadAllCycles();
+    yield* db.tableUpdates(TableUpdateQuery.onAllTables([db.budgetCycles])).asyncMap((_) => loadAllCycles());
   }
 
   // ---------------------------------------------------------------------
