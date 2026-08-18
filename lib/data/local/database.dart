@@ -30,6 +30,18 @@ class RecurringTemplates extends Table {
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// Correctif "échéances récurrentes hors cycle" : décrit COMMENT calculer
+  /// la prochaine occurrence à partir de la précédente — 'mensuel_jour_fixe'
+  /// (comportement historique, seul mode qui existait avant ce correctif),
+  /// 'toutes_les_x_semaines' ou 'tous_les_x_jours' (avec [intervalValue]).
+  /// Un cycle ne récupère ensuite que les occurrences dont la date tombe
+  /// réellement dans sa période — jamais une simple copie positionnelle.
+  TextColumn get recurrenceType => text().withDefault(const Constant('mensuel_jour_fixe'))();
+
+  /// X pour "toutes les X semaines" / "tous les X jours" — `null` pour
+  /// 'mensuel_jour_fixe'.
+  IntColumn get intervalValue => integer().nullable()();
 }
 
 class BudgetCycles extends Table {
@@ -227,7 +239,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -280,6 +292,30 @@ class AppDatabase extends _$AppDatabase {
             // V1.1 — Safe Projects : priorité utilisateur, additive, valeur
             // par défaut "moyenne" pour tous les projets déjà enregistrés.
             await m.addColumn(projects, projects.priority);
+          }
+          if (from < 8) {
+            // Correctif "échéances récurrentes hors cycle" : RecurringTemplates
+            // existe depuis la toute première version (créée par `createAll()`
+            // à chaque installation, jamais conditionnée par une branche de
+            // migration) — ces deux colonnes lui manquent donc sur toute base
+            // existante, quelle que soit sa version de départ. Purement
+            // additif : aucune ligne, aucune charge existante n'est touchée
+            // (le repository backfille lui-même les modèles manquants au fil
+            // de l'eau, à la prochaine création de cycle). Vérifie d'abord
+            // que les colonnes n'existent pas déjà : `recurring_templates`
+            // n'étant jamais recréée par une branche `createTable` de cette
+            // migration (contrairement à `credits`/`projects`), une base déjà
+            // à jour sur cette table précise (ex. rouverte après un premier
+            // essai de migration interrompu) ne doit jamais provoquer une
+            // erreur "duplicate column".
+            final existingColumns = await customSelect("PRAGMA table_info('recurring_templates')").get();
+            final columnNames = existingColumns.map((r) => r.data['name'] as String).toSet();
+            if (!columnNames.contains('recurrence_type')) {
+              await m.addColumn(recurringTemplates, recurringTemplates.recurrenceType);
+            }
+            if (!columnNames.contains('interval_value')) {
+              await m.addColumn(recurringTemplates, recurringTemplates.intervalValue);
+            }
           }
         },
       );

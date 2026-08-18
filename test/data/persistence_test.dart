@@ -116,12 +116,12 @@ void main() {
     await db.close();
   });
 
-  test('la version de schéma Drift actuelle est bien celle attendue (7)', () {
+  test('la version de schéma Drift actuelle est bien celle attendue (8)', () {
     // Ce test échoue volontairement si quelqu'un bumpe schemaVersion sans
     // ajouter la branche de migration correspondante dans AppDatabase.migration
     // — rappel explicite à mettre à jour ce test et la doc de persistance.
     final db = AppDatabase.forTesting(NativeDatabase.memory());
-    expect(db.schemaVersion, 7);
+    expect(db.schemaVersion, 8);
     db.close();
   });
 }

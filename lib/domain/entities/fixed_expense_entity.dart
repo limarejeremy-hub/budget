@@ -16,6 +16,12 @@ class FixedExpenseEntity {
   /// `null` pour une charge fixe "normale" saisie manuellement.
   final int? linkedCreditId;
 
+  /// Modèle récurrent (`RecurringTemplates`) dont cette charge est une
+  /// occurrence — `null` pour une charge ponctuelle, ou une charge
+  /// récurrente créée avant le correctif "échéances récurrentes hors
+  /// cycle" et pas encore rattachée (backfill au fil de l'eau).
+  final int? templateId;
+
   const FixedExpenseEntity({
     required this.id,
     required this.cycleId,
@@ -28,6 +34,7 @@ class FixedExpenseEntity {
     this.isRecurring = false,
     this.isActive = true,
     this.linkedCreditId,
+    this.templateId,
   });
 
   bool get isLinkedToCredit => linkedCreditId != null;

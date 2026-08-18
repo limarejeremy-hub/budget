@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -9,6 +10,12 @@ import '../../core/widgets/euro_amount_field.dart';
 import '../../core/widgets/form_actions_row.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../credits/widgets/complete_credit_sheet.dart';
+
+const _recurrenceLabels = {
+  RecurrenceType.mensuelJourFixe: 'Mensuel (jour fixe)',
+  RecurrenceType.toutesLesXSemaines: 'Toutes les X semaines',
+  RecurrenceType.tousLesXJours: 'Tous les X jours',
+};
 
 const _kCreditCategoryName = 'Crédit';
 
@@ -34,6 +41,8 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
   int? _categoryId;
   late bool _isRecurring;
   late bool _isActive;
+  String _recurrenceType = RecurrenceType.mensuelJourFixe;
+  late final TextEditingController _intervalController;
   bool _saving = false;
 
   bool get _isEditing => widget.existing != null;
@@ -47,14 +56,30 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
       text: existing == null ? '' : (existing.expectedAmountCents / 100).toStringAsFixed(2),
     );
     _actualAmountController = TextEditingController(
-      text: existing?.actualAmountCents == null
-          ? ''
-          : (existing!.actualAmountCents! / 100).toStringAsFixed(2),
+      text: existing?.actualAmountCents == null ? '' : (existing!.actualAmountCents! / 100).toStringAsFixed(2),
     );
     _expectedDate = existing?.expectedDate ?? DateTime.now();
     _categoryId = existing?.categoryId;
     _isRecurring = existing?.isRecurring ?? false;
     _isActive = existing?.isActive ?? true;
+    _intervalController = TextEditingController();
+
+    // Une charge récurrente existante affiche par défaut "Mensuel (jour
+    // fixe)" — comportement historique — jusqu'à ce que son modèle
+    // récurrent (s'il existe déjà) soit chargé, ci-dessous.
+    final templateId = existing?.templateId;
+    if (templateId != null) {
+      _loadTemplate(templateId);
+    }
+  }
+
+  Future<void> _loadTemplate(int templateId) async {
+    final template = await ref.read(cycleRepositoryProvider).loadTemplate(templateId);
+    if (!mounted || template == null) return;
+    setState(() {
+      _recurrenceType = template.recurrenceType;
+      _intervalController.text = template.intervalValue?.toString() ?? '';
+    });
   }
 
   @override
@@ -62,6 +87,7 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
     _nameController.dispose();
     _expectedAmountController.dispose();
     _actualAmountController.dispose();
+    _intervalController.dispose();
     super.dispose();
   }
 
@@ -129,6 +155,9 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
       }
     }
 
+    final recurrenceIntervalValue =
+        RecurrenceType.withInterval.contains(_recurrenceType) ? int.tryParse(_intervalController.text) : null;
+
     setState(() => _saving = true);
     try {
       if (_isEditing) {
@@ -142,6 +171,8 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
           isRecurring: _isRecurring,
           isActive: _isActive,
           linkedCreditId: linkedCreditId,
+          recurrenceType: _recurrenceType,
+          recurrenceIntervalValue: recurrenceIntervalValue,
         );
       } else {
         await repository.createFixedExpense(
@@ -154,6 +185,8 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
           isRecurring: _isRecurring,
           isActive: _isActive,
           linkedCreditId: linkedCreditId,
+          recurrenceType: _recurrenceType,
+          recurrenceIntervalValue: recurrenceIntervalValue,
         );
       }
       if (linkedCreditId != null && !skipCreditSync) {
@@ -223,6 +256,36 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
                 value: _isRecurring,
                 onChanged: (v) => setState(() => _isRecurring = v),
               ),
+              if (_isRecurring) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _recurrenceType,
+                  decoration: const InputDecoration(labelText: 'Récurrence'),
+                  items: [
+                    for (final entry in _recurrenceLabels.entries)
+                      DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+                  ],
+                  onChanged: (value) => setState(() => _recurrenceType = value!),
+                ),
+                if (RecurrenceType.withInterval.contains(_recurrenceType)) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _intervalController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: _recurrenceType == RecurrenceType.toutesLesXSemaines
+                          ? 'Tous les combien de semaines ?'
+                          : 'Tous les combien de jours ?',
+                    ),
+                    validator: (v) {
+                      final n = int.tryParse(v?.trim() ?? '');
+                      if (n == null || n < 1) return 'Doit être un nombre entier ≥ 1';
+                      return null;
+                    },
+                  ),
+                ],
+              ],
               SwitchListTile(
                 title: const Text('Active'),
                 value: _isActive,

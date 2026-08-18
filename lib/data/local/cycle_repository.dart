@@ -5,6 +5,7 @@ import '../../core/constants/default_categories.dart';
 import '../../domain/calculations/budget_calculation_service.dart';
 import '../../domain/calculations/credit_auto_update_service.dart';
 import '../../domain/calculations/cycle_close_service.dart';
+import '../../domain/calculations/recurrence_calculator.dart';
 import 'converters/entity_mappers.dart';
 import 'database.dart';
 
@@ -14,6 +15,7 @@ const int backupFormatVersion = 1;
 
 const _budgetCalculationService = BudgetCalculationService();
 const _cycleCloseService = CycleCloseService();
+const _recurrenceCalculator = RecurrenceCalculator();
 
 /// Levée lorsqu'un fichier de sauvegarde ne correspond pas au format attendu.
 /// Le message est destiné à être affiché directement à l'utilisateur.
@@ -210,22 +212,34 @@ class CycleRepository {
       }
 
       if (copyRecurringFromCycleId != null) {
-        await _copyRecurringEntries(fromCycleId: copyRecurringFromCycleId, toCycleId: cycleId);
+        await _copyRecurringEntries(
+          fromCycleId: copyRecurringFromCycleId,
+          toCycleId: cycleId,
+          toCycleStart: startDate,
+          toCycleEnd: endDate,
+        );
       }
 
       return cycleId;
     });
   }
 
-  /// Recopie les revenus, charges fixes (hors charges liées à un crédit,
-  /// déjà générées séparément) et épargnes marqués récurrents et actifs du
-  /// cycle [fromCycleId] vers [toCycleId] — jamais les entrées ponctuelles
-  /// (§5, §6, §9), jamais les charges désactivées (§6). Chaque entrée
-  /// recopiée utilise sa valeur récurrente la plus récente, une date avancée
-  /// d'un mois avec repli sur le dernier jour valide du mois (§14), et un
-  /// statut remis à sa valeur par défaut ("à venir" / "prévu") — jamais le
-  /// statut ou le montant réel confirmé du cycle précédent.
-  Future<void> _copyRecurringEntries({required int fromCycleId, required int toCycleId}) async {
+  /// Recopie les revenus et épargnes marqués récurrents et actifs du cycle
+  /// [fromCycleId] vers [toCycleId] (jamais les entrées ponctuelles, §5,
+  /// §9 — comportement inchangé, une seule occurrence par cycle), et
+  /// génère les occurrences de charges fixes récurrentes dont la date
+  /// tombe réellement dans `[toCycleStart, toCycleEnd]` — jamais les
+  /// charges désactivées, jamais celles liées à un crédit (déjà générées
+  /// séparément). Correctif "échéances récurrentes hors cycle" : une charge
+  /// n'appartient à un cycle que si sa date réelle y tombe, et un cycle
+  /// peut légitimement recevoir zéro, une, ou plusieurs occurrences d'une
+  /// même charge selon sa récurrence.
+  Future<void> _copyRecurringEntries({
+    required int fromCycleId,
+    required int toCycleId,
+    required DateTime toCycleStart,
+    required DateTime toCycleEnd,
+  }) async {
     final incomes = await (db.select(db.incomes)
           ..where((i) => i.cycleId.equals(fromCycleId) & i.isRecurring.equals(true) & i.isActive.equals(true)))
         .get();
@@ -240,23 +254,12 @@ class CycleRepository {
           ));
     }
 
-    final fixedExpenses = await (db.select(db.fixedExpenses)
-          ..where((e) =>
-              e.cycleId.equals(fromCycleId) &
-              e.isRecurring.equals(true) &
-              e.isActive.equals(true) &
-              e.linkedCreditId.isNull()))
-        .get();
-    for (final expense in fixedExpenses) {
-      await db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
-            cycleId: toCycleId,
-            name: expense.name,
-            expectedAmountCents: expense.expectedAmountCents,
-            expectedDate: _cycleCloseService.recurringEntryDateForNextCycle(expense.expectedDate),
-            categoryId: Value(expense.categoryId),
-            isRecurring: const Value(true),
-          ));
-    }
+    await _generateFixedExpenseOccurrences(
+      fromCycleId: fromCycleId,
+      toCycleId: toCycleId,
+      toCycleStart: toCycleStart,
+      toCycleEnd: toCycleEnd,
+    );
 
     final savings = await (db.select(db.savings)
           ..where((s) => s.cycleId.equals(fromCycleId) & s.isRecurring.equals(true) & s.isActive.equals(true)))
@@ -269,6 +272,73 @@ class CycleRepository {
             expectedDate: _cycleCloseService.recurringEntryDateForNextCycle(saving.expectedDate),
             isRecurring: const Value(true),
           ));
+    }
+  }
+
+  /// Génère, pour chaque modèle récurrent actif (globalement — pas
+  /// seulement ceux ayant produit une occurrence dans [fromCycleId], sinon
+  /// un cycle à zéro occurrence romprait la chaîne pour toujours, §
+  /// "zéro occurrence dans un cycle" + "passage au cycle suivant"), toutes
+  /// les occurrences dont la date tombe dans `[toCycleStart, toCycleEnd]` —
+  /// jamais limité à une seule par cycle (§ "toutes les 4 semaines" peut
+  /// produire 0, 1 ou 2 occurrences selon la période). Les charges
+  /// récurrentes antérieures au correctif (sans modèle encore rattaché)
+  /// reçoivent un modèle 'mensuel_jour_fixe' — leur comportement historique
+  /// exact — au fil de l'eau, sans jamais nécessiter de ressaisie.
+  Future<void> _generateFixedExpenseOccurrences({
+    required int fromCycleId,
+    required int toCycleId,
+    required DateTime toCycleStart,
+    required DateTime toCycleEnd,
+  }) async {
+    final legacyRows = await (db.select(db.fixedExpenses)
+          ..where((e) =>
+              e.cycleId.equals(fromCycleId) &
+              e.isRecurring.equals(true) &
+              e.isActive.equals(true) &
+              e.linkedCreditId.isNull() &
+              e.templateId.isNull()))
+        .get();
+    for (final row in legacyRows) {
+      final templateId = await _createTemplate(
+        name: row.name,
+        amountCents: row.expectedAmountCents,
+        day: row.expectedDate.day,
+        categoryId: row.categoryId,
+        recurrenceType: RecurrenceType.mensuelJourFixe,
+        intervalValue: null,
+      );
+      await (db.update(db.fixedExpenses)..where((e) => e.id.equals(row.id)))
+          .write(FixedExpensesCompanion(templateId: Value(templateId)));
+    }
+
+    final activeTemplates = await (db.select(db.recurringTemplates)
+          ..where((t) => t.type.equals(EntityType.fixedExpense) & t.isActive.equals(true)))
+        .get();
+
+    for (final template in activeTemplates) {
+      final templateRows = await (db.select(db.fixedExpenses)..where((e) => e.templateId.equals(template.id))).get();
+      if (templateRows.isEmpty) continue;
+      final lastKnownDate = templateRows.map((r) => r.expectedDate).reduce((a, b) => a.isAfter(b) ? a : b);
+
+      final occurrences = _recurrenceCalculator.occurrencesInRange(
+        lastKnownDate: lastKnownDate,
+        start: toCycleStart,
+        end: toCycleEnd,
+        recurrenceType: template.recurrenceType,
+        intervalValue: template.intervalValue,
+      );
+      for (final date in occurrences) {
+        await db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
+              cycleId: toCycleId,
+              templateId: Value(template.id),
+              name: template.name,
+              expectedAmountCents: template.defaultAmountCents,
+              expectedDate: date,
+              categoryId: Value(template.categoryId),
+              isRecurring: const Value(true),
+            ));
+      }
     }
   }
 
@@ -356,6 +426,12 @@ class CycleRepository {
   // Charges fixes
   // ---------------------------------------------------------------------
 
+  /// [recurrenceType]/[recurrenceIntervalValue] ne s'appliquent que si
+  /// [isRecurring] est vrai et la charge n'est pas liée à un crédit (les
+  /// charges de crédit sont générées séparément, cf. [_syncLinkedChargeForCycle])
+  /// : un modèle récurrent (`RecurringTemplates`) est alors créé, qui
+  /// pilotera la génération des occurrences futures — correctif "échéances
+  /// récurrentes hors cycle".
   Future<int> createFixedExpense({
     required int cycleId,
     required String name,
@@ -366,18 +442,34 @@ class CycleRepository {
     bool isRecurring = false,
     bool isActive = true,
     int? linkedCreditId,
+    String recurrenceType = RecurrenceType.mensuelJourFixe,
+    int? recurrenceIntervalValue,
   }) {
-    return db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
-          cycleId: cycleId,
+    return db.transaction(() async {
+      int? templateId;
+      if (isRecurring && isActive && linkedCreditId == null) {
+        templateId = await _createTemplate(
           name: name,
-          expectedAmountCents: expectedAmountCents,
-          actualAmountCents: Value(actualAmountCents),
-          expectedDate: expectedDate,
-          categoryId: Value(categoryId),
-          isRecurring: Value(isRecurring),
-          isActive: Value(isActive),
-          linkedCreditId: Value(linkedCreditId),
-        ));
+          amountCents: expectedAmountCents,
+          day: expectedDate.day,
+          categoryId: categoryId,
+          recurrenceType: recurrenceType,
+          intervalValue: recurrenceIntervalValue,
+        );
+      }
+      return db.into(db.fixedExpenses).insert(FixedExpensesCompanion.insert(
+            cycleId: cycleId,
+            templateId: Value(templateId),
+            name: name,
+            expectedAmountCents: expectedAmountCents,
+            actualAmountCents: Value(actualAmountCents),
+            expectedDate: expectedDate,
+            categoryId: Value(categoryId),
+            isRecurring: Value(isRecurring),
+            isActive: Value(isActive),
+            linkedCreditId: Value(linkedCreditId),
+          ));
+    });
   }
 
   Future<void> updateFixedExpense({
@@ -390,20 +482,89 @@ class CycleRepository {
     required bool isRecurring,
     required bool isActive,
     int? linkedCreditId,
+    String recurrenceType = RecurrenceType.mensuelJourFixe,
+    int? recurrenceIntervalValue,
   }) {
-    return (db.update(db.fixedExpenses)..where((t) => t.id.equals(id))).write(FixedExpensesCompanion(
-      name: Value(name),
-      expectedAmountCents: Value(expectedAmountCents),
-      actualAmountCents: Value(actualAmountCents),
-      expectedDate: Value(expectedDate),
-      categoryId: Value(categoryId),
-      isRecurring: Value(isRecurring),
-      isActive: Value(isActive),
-      linkedCreditId: Value(linkedCreditId),
-    ));
+    return db.transaction(() async {
+      final existing = await (db.select(db.fixedExpenses)..where((t) => t.id.equals(id))).getSingle();
+      var templateId = existing.templateId;
+
+      // Le modèle ne doit produire de nouvelles occurrences que si la
+      // charge est À LA FOIS récurrente ET active ET non liée à un crédit —
+      // `isRecurring` seul ne suffit pas : une charge récurrente désactivée
+      // (ex : abonnement résilié) ne doit plus jamais être recopiée.
+      if (isRecurring && isActive && linkedCreditId == null) {
+        if (templateId == null) {
+          templateId = await _createTemplate(
+            name: name,
+            amountCents: expectedAmountCents,
+            day: expectedDate.day,
+            categoryId: categoryId,
+            recurrenceType: recurrenceType,
+            intervalValue: recurrenceIntervalValue,
+          );
+        } else {
+          final existingTemplateId = templateId;
+          await (db.update(db.recurringTemplates)..where((t) => t.id.equals(existingTemplateId))).write(
+            RecurringTemplatesCompanion(
+              name: Value(name),
+              defaultAmountCents: Value(expectedAmountCents),
+              defaultDay: Value(expectedDate.day),
+              categoryId: Value(categoryId),
+              isActive: const Value(true),
+              recurrenceType: Value(recurrenceType),
+              intervalValue: Value(recurrenceIntervalValue),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+        }
+      } else if (templateId != null) {
+        // Devenue ponctuelle, désactivée, ou liée à un crédit (généré
+        // séparément) : le modèle ne doit plus produire de nouvelles
+        // occurrences, mais reste conservé (jamais supprimé) — l'historique
+        // qu'il a déjà généré ne change pas.
+        final existingTemplateId = templateId;
+        await (db.update(db.recurringTemplates)..where((t) => t.id.equals(existingTemplateId)))
+            .write(const RecurringTemplatesCompanion(isActive: Value(false)));
+      }
+
+      await (db.update(db.fixedExpenses)..where((t) => t.id.equals(id))).write(FixedExpensesCompanion(
+        templateId: Value(templateId),
+        name: Value(name),
+        expectedAmountCents: Value(expectedAmountCents),
+        actualAmountCents: Value(actualAmountCents),
+        expectedDate: Value(expectedDate),
+        categoryId: Value(categoryId),
+        isRecurring: Value(isRecurring),
+        isActive: Value(isActive),
+        linkedCreditId: Value(linkedCreditId),
+      ));
+    });
   }
 
   Future<void> deleteFixedExpense(int id) => (db.delete(db.fixedExpenses)..where((t) => t.id.equals(id))).go();
+
+  Future<int> _createTemplate({
+    required String name,
+    required int amountCents,
+    required int day,
+    int? categoryId,
+    required String recurrenceType,
+    int? intervalValue,
+  }) {
+    return db.into(db.recurringTemplates).insert(RecurringTemplatesCompanion.insert(
+          type: EntityType.fixedExpense,
+          name: name,
+          defaultAmountCents: amountCents,
+          defaultDay: day,
+          categoryId: Value(categoryId),
+          recurrenceType: Value(recurrenceType),
+          intervalValue: Value(intervalValue),
+        ));
+  }
+
+  Future<RecurringTemplate?> loadTemplate(int templateId) =>
+      (db.select(db.recurringTemplates)..where((t) => t.id.equals(templateId))).getSingleOrNull();
 
   /// Change manuellement le statut d'une charge fixe (ex : "prelevee",
   /// "suspendue", "incident"). Un statut manuel n'est jamais recalculé

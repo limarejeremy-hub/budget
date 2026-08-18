@@ -54,6 +54,23 @@ class EntityType {
   static const String saving = 'saving';
 }
 
+/// Types de récurrence d'un modèle récurrent (`RecurringTemplates`) —
+/// correctif "échéances récurrentes hors cycle" : le caractère "récurrent"
+/// d'une charge ne suffit jamais à la faire entrer dans un cycle, seule la
+/// date réelle de chaque occurrence compte. [ponctuel] n'est jamais stocké
+/// sur un modèle (une charge ponctuelle n'a pas de modèle) — il représente
+/// uniquement l'absence de récurrence côté formulaire.
+class RecurrenceType {
+  RecurrenceType._();
+  static const String mensuelJourFixe = 'mensuel_jour_fixe';
+  static const String toutesLesXSemaines = 'toutes_les_x_semaines';
+  static const String tousLesXJours = 'tous_les_x_jours';
+  static const String ponctuel = 'ponctuel';
+
+  /// Types nécessitant un intervalle numérique (semaines/jours).
+  static const List<String> withInterval = [toutesLesXSemaines, tousLesXJours];
+}
+
 /// Catégories possibles pour un projet (V1.0 — Project Planner).
 class ProjectCategory {
   ProjectCategory._();
