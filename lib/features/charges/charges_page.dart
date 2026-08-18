@@ -15,6 +15,7 @@ import '../../domain/calculations/charge_sorting.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
 import 'charge_detail_sheet.dart';
+import 'widgets/deferred_badge.dart';
 
 /// Sélection "Sans catégorie" dans le menu déroulant — distinct de `null`
 /// qui représente ici "Toutes les catégories" (aucun filtre). Jamais un id
@@ -342,6 +343,10 @@ class _ChargeCard extends StatelessWidget {
                                 .labelSmall
                                 ?.copyWith(color: presentation.color, fontWeight: FontWeight.w600)),
                       ),
+                      if (charge.deferredToNextCycle) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        const DeferredBadge(),
+                      ],
                     ],
                   ),
                 ],

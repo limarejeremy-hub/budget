@@ -138,14 +138,18 @@ class CategoryChargeTotal {
 /// `effectiveAmountCents` (montant réel si connu, sinon montant prévu) et
 /// exclut les charges inactives ou suspendues, exactement comme
 /// `BudgetCalculationService.calculateTotalFixedExpenses` — jamais un
-/// nouveau calcul du montant d'une charge. Chaque charge (y compris liée à
-/// un crédit) n'est comptée qu'une seule fois, dans sa seule catégorie.
-/// Trié du plus coûteux au moins coûteux ("classement par coût").
+/// nouveau calcul du montant d'une charge. Exclut aussi les charges
+/// reportées au prochain cycle (§ "Affectation manuelle d'une charge au
+/// prochain cycle", §9) : elles restent consultables dans leur catégorie
+/// (badge "Prochain cycle"), mais ne participent plus au total du cycle
+/// actuel. Chaque charge (y compris liée à un crédit) n'est comptée qu'une
+/// seule fois, dans sa seule catégorie. Trié du plus coûteux au moins
+/// coûteux ("classement par coût").
 List<CategoryChargeTotal> categoryTotals(
   List<FixedExpenseEntity> charges, {
   required Map<int, String> categoryNames,
 }) {
-  final eligible = charges.where((c) => c.isActive && c.status != ChargeStatus.suspendue);
+  final eligible = charges.where((c) => c.isActive && c.status != ChargeStatus.suspendue && !c.deferredToNextCycle);
   final totals = <int?, int>{};
   for (final charge in eligible) {
     totals.update(

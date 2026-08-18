@@ -91,6 +91,18 @@ class FixedExpenses extends Table {
   /// est la source de vérité : cette charge n'est jamais créée à la main
   /// par l'utilisateur quand elle est liée.
   IntColumn get linkedCreditId => integer().nullable().references(Credits, #id)();
+
+  /// "Affectation manuelle d'une charge au prochain cycle" : `true` quand
+  /// l'utilisateur a explicitement choisi "Reporter au prochain cycle" —
+  /// cette occurrence cesse alors de participer au total financier / à
+  /// l'argent libre de SON cycle (`cycleId`, jamais réaffecté par ce
+  /// report) sans jamais être supprimée ni sa date modifiée. Distinct de
+  /// `cycleId` (qui reste l'affectation "normale") et de `expectedDate`
+  /// (qui reste la seule source de vérité chronologique — Aujourd'hui,
+  /// Cette semaine, prochaines échéances, notifications). Remis à `false`
+  /// automatiquement quand la charge est promue vers le cycle suivant à sa
+  /// création (cf. `CycleRepository._promoteDeferredCharges`).
+  BoolColumn get deferredToNextCycle => boolean().withDefault(const Constant(false))();
 }
 
 class VariableExpenses extends Table {
@@ -239,7 +251,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -315,6 +327,24 @@ class AppDatabase extends _$AppDatabase {
             }
             if (!columnNames.contains('interval_value')) {
               await m.addColumn(recurringTemplates, recurringTemplates.intervalValue);
+            }
+          }
+          if (from < 9) {
+            // "Affectation manuelle d'une charge au prochain cycle" :
+            // colonne additive uniquement, valeur par défaut `false` pour
+            // toutes les charges existantes — leur affectation budgétaire
+            // actuelle (cycleId) ne change pas tant que l'utilisateur ne
+            // choisit pas explicitement "Reporter au prochain cycle". Même
+            // garde défensive que pour `recurring_templates` ci-dessus
+            // (§ `from < 8`) : `fixed_expenses` existe depuis la toute
+            // première version, jamais recréée par une branche `createTable`
+            // de cette migration, donc une base déjà à jour sur cette
+            // colonne précise ne doit jamais provoquer une erreur "duplicate
+            // column".
+            final fixedExpensesColumns = await customSelect("PRAGMA table_info('fixed_expenses')").get();
+            final fixedExpensesColumnNames = fixedExpensesColumns.map((r) => r.data['name'] as String).toSet();
+            if (!fixedExpensesColumnNames.contains('deferred_to_next_cycle')) {
+              await m.addColumn(fixedExpenses, fixedExpenses.deferredToNextCycle);
             }
           }
         },

@@ -269,4 +269,95 @@ void main() {
 
     expect(result.realRemainingCents, 450000);
   });
+
+  group('"Affectation manuelle d\'une charge au prochain cycle" : deferredToNextCycle', () {
+    test('une charge reportée est exclue du total des charges, de l\'argent libre et du "à confirmer"', () {
+      final result = builder.build(
+        cycleId: 1,
+        cycleStart: cycleStart,
+        cycleEnd: cycleEnd,
+        incomes: [
+          IncomeEntity(id: 1, cycleId: 1, name: 'Jeremy', expectedAmountCents: 168000, expectedDate: cycleStart),
+        ],
+        fixedExpenses: [
+          FixedExpenseEntity(
+            id: 1,
+            cycleId: 1,
+            name: 'EDF',
+            expectedAmountCents: 18000,
+            expectedDate: DateTime(2026, 8, 30),
+            deferredToNextCycle: true,
+          ),
+        ],
+        variableExpenses: const [],
+        savings: const [],
+      );
+
+      expect(result.totalFixedExpensesCents, 0);
+      expect(result.realRemainingCents, 168000);
+      expect(result.unconfirmedChargesCount, 0);
+      expect(result.unconfirmedChargesTotalCents, 0);
+    });
+
+    test(
+        'une charge reportée reste dans Aujourd\'hui / Cette semaine / prochaines échéances — '
+        'purement chronologique, jamais affecté par le report', () {
+      final today = DateTime(2026, 8, 5);
+      final result = builder.build(
+        cycleId: 1,
+        cycleStart: cycleStart,
+        cycleEnd: cycleEnd,
+        incomes: const [],
+        fixedExpenses: [
+          FixedExpenseEntity(
+            id: 1,
+            cycleId: 1,
+            name: 'EDF',
+            expectedAmountCents: 18000,
+            expectedDate: today,
+            deferredToNextCycle: true,
+          ),
+          FixedExpenseEntity(
+            id: 2,
+            cycleId: 1,
+            name: 'Assurance',
+            expectedAmountCents: 5000,
+            expectedDate: today.add(const Duration(days: 2)),
+            deferredToNextCycle: true,
+          ),
+        ],
+        variableExpenses: const [],
+        savings: const [],
+        now: today,
+      );
+
+      expect(result.todayFixedExpenses.map((e) => e.id), contains(1));
+      expect(result.upcomingCharges.map((e) => e.id), containsAll([1, 2]));
+      expect(result.thisWeekFixedExpenses.map((e) => e.id), contains(2));
+    });
+
+    test('totalFixedExpensesExcludingCreditsCents (reste à vivre structurel) n\'est jamais affecté par un report', () {
+      final result = builder.build(
+        cycleId: 1,
+        cycleStart: cycleStart,
+        cycleEnd: cycleEnd,
+        incomes: const [],
+        fixedExpenses: [
+          FixedExpenseEntity(
+            id: 1,
+            cycleId: 1,
+            name: 'EDF',
+            expectedAmountCents: 18000,
+            expectedDate: cycleStart,
+            deferredToNextCycle: true,
+          ),
+        ],
+        variableExpenses: const [],
+        savings: const [],
+      );
+
+      expect(result.totalFixedExpensesExcludingCreditsCents, 18000,
+          reason: 'le report est une affectation cash-flow ponctuelle, pas une disparition de la charge récurrente');
+    });
+  });
 }

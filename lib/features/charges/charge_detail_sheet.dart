@@ -11,6 +11,8 @@ import '../../core/widgets/brand_badge.dart';
 import '../../core/widgets/confirm_delete_dialog.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
 import '../entries/fixed_expense_form_page.dart';
+import 'widgets/defer_charge_dialog.dart';
+import 'widgets/deferred_badge.dart';
 import 'widgets/delete_linked_charge_dialog.dart';
 
 /// Ouvre la fiche détaillée d'une charge fixe : détail complet + actions
@@ -68,10 +70,7 @@ class ChargeDetailSheet extends ConsumerWidget {
                 Icon(Icons.event_rounded, size: 16, color: colorScheme.onSurfaceVariant),
                 const SizedBox(width: AppSpacing.xs),
                 Text(formatDayMonthFr(charge.expectedDate),
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.copyWith(color: colorScheme.onSurfaceVariant)),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant)),
                 const SizedBox(width: AppSpacing.md),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
@@ -92,6 +91,10 @@ class ChargeDetailSheet extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (charge.deferredToNextCycle) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  const DeferredBadge(),
+                ],
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -114,11 +117,34 @@ class ChargeDetailSheet extends ConsumerWidget {
                 title: const Text('Marquer comme prélevée'),
                 onTap: () async {
                   final messenger = ScaffoldMessenger.of(context);
-                  await ref
-                      .read(cycleRepositoryProvider)
-                      .updateFixedExpenseStatus(charge.id, ChargeStatus.prelevee);
+                  await ref.read(cycleRepositoryProvider).updateFixedExpenseStatus(charge.id, ChargeStatus.prelevee);
                   if (context.mounted) Navigator.of(context).pop();
                   messenger.showSnackBar(const SnackBar(content: Text('Charge marquée comme prélevée')));
+                },
+              ),
+            // "Affectation manuelle d'une charge au prochain cycle" :
+            // report/retour, jamais les deux en même temps, jamais de
+            // nouvel écran ni de confirmation pour le retour (§4, §14).
+            if (!charge.deferredToNextCycle)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.skip_next_outlined),
+                title: const Text('Reporter au prochain cycle'),
+                onTap: () async {
+                  final confirmed = await confirmDeferToNextCycle(context);
+                  if (!confirmed || !context.mounted) return;
+                  await ref.read(cycleRepositoryProvider).deferFixedExpenseToNextCycle(charge.id);
+                  if (context.mounted) Navigator.of(context).pop();
+                },
+              )
+            else
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.undo_rounded),
+                title: const Text('Ramener au cycle actuel'),
+                onTap: () async {
+                  await ref.read(cycleRepositoryProvider).bringFixedExpenseBackToCurrentCycle(charge.id);
+                  if (context.mounted) Navigator.of(context).pop();
                 },
               ),
             // Une mensualité de crédit est unique par cycle (générée

@@ -53,6 +53,7 @@ FixedExpenseEntity fixedExpenseFromRow(FixedExpense row, {DateTime? now}) {
     isActive: row.isActive,
     linkedCreditId: row.linkedCreditId,
     templateId: row.templateId,
+    deferredToNextCycle: row.deferredToNextCycle,
   );
 }
 

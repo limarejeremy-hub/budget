@@ -273,6 +273,7 @@ class CycleRepository {
       toCycleStart: toCycleStart,
       toCycleEnd: toCycleEnd,
     );
+    await _promoteDeferredCharges(fromCycleId: fromCycleId, toCycleId: toCycleId);
 
     final savings = await (db.select(db.savings)
           ..where((s) => s.cycleId.equals(fromCycleId) & s.isRecurring.equals(true) & s.isActive.equals(true)))
@@ -361,6 +362,31 @@ class CycleRepository {
     }
   }
 
+  /// "Affectation manuelle d'une charge au prochain cycle", §6 : toute
+  /// charge explicitement reportée (`deferredToNextCycle == true`) depuis
+  /// [fromCycleId] est déplacée vers [toCycleId] (son vrai cycle
+  /// budgétaire désormais) et le report est levé — elle redevient une
+  /// charge "normale" du nouveau cycle, comptée dans son total. Sa date
+  /// (`expectedDate`) n'est jamais modifiée ici. Indépendant de
+  /// [_generateFixedExpenseOccurrences] : si le modèle récurrent de cette
+  /// charge produit par ailleurs une nouvelle occurrence normale pour ce
+  /// même cycle, les deux coexistent légitimement (§7, "prélèvement
+  /// atypique") — jamais un doublon, ce sont deux échéances réellement
+  /// distinctes (dates différentes).
+  Future<void> _promoteDeferredCharges({required int fromCycleId, required int toCycleId}) async {
+    final deferred = await (db.select(db.fixedExpenses)
+          ..where((e) => e.cycleId.equals(fromCycleId) & e.deferredToNextCycle.equals(true)))
+        .get();
+    for (final charge in deferred) {
+      await (db.update(db.fixedExpenses)..where((e) => e.id.equals(charge.id))).write(
+        FixedExpensesCompanion(
+          cycleId: Value(toCycleId),
+          deferredToNextCycle: const Value(false),
+        ),
+      );
+    }
+  }
+
   /// Clôture le cycle [cycleId] : fige l'argent libre final (formule
   /// centrale `BudgetCalculationService.calculateRealRemaining`, jamais
   /// recalculée différemment) et passe son statut à 'ferme'. Ses revenus,
@@ -380,9 +406,17 @@ class CycleRepository {
       final variableExpenses = await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycleId))).get();
       final savings = await (db.select(db.savings)..where((s) => s.cycleId.equals(cycleId))).get();
 
+      // Une charge explicitement reportée au prochain cycle ne doit jamais
+      // peser sur le solde figé de CE cycle (§ "Affectation manuelle d'une
+      // charge au prochain cycle") — exactement le même filtre que l'argent
+      // libre affiché en direct avant la clôture, pour qu'aucun écart
+      // n'apparaisse entre le dernier chiffre vu par l'utilisateur et le
+      // solde historisé.
+      final cashFlowFixedExpenses = fixedExpenses.where((e) => !e.deferredToNextCycle).toList();
+
       final finalRemaining = _budgetCalculationService.calculateRealRemaining(
         incomes: incomes.map(incomeFromRow).toList(),
-        fixedExpenses: fixedExpenses.map(fixedExpenseFromRow).toList(),
+        fixedExpenses: cashFlowFixedExpenses.map(fixedExpenseFromRow).toList(),
         variableExpenses: variableExpenses.map(variableExpenseFromRow).toList(),
         savings: savings.map(savingFromRow).toList(),
         startingBalanceCents: cycle.declaredBankBalanceCents ?? 0,
@@ -567,6 +601,34 @@ class CycleRepository {
   }
 
   Future<void> deleteFixedExpense(int id) => (db.delete(db.fixedExpenses)..where((t) => t.id.equals(id))).go();
+
+  // ---------------------------------------------------------------------
+  // Affectation manuelle d'une charge au prochain cycle
+  // ---------------------------------------------------------------------
+
+  /// "Reporter au prochain cycle" : la charge [id] reste dans son cycle
+  /// d'origine (`cycleId` inchangé) et sa date réelle de prélèvement
+  /// (`expectedDate`) n'est jamais modifiée — seule son appartenance
+  /// BUDGÉTAIRE change, donc elle cesse immédiatement de participer au
+  /// total financier / à l'argent libre du cycle actuel (le flux réactif
+  /// existant, `tableUpdates` sur `fixedExpenses`, recalcule tout sans
+  /// redémarrage). Jamais supprimée, jamais dupliquée. Automatiquement
+  /// recomptée dans le prochain cycle dès sa création (§6, cf.
+  /// [_promoteDeferredCharges]), aux côtés d'une éventuelle nouvelle
+  /// occurrence normale générée par la récurrence si les deux tombent
+  /// réellement sur la même paie (§7).
+  Future<void> deferFixedExpenseToNextCycle(int id) {
+    return (db.update(db.fixedExpenses)..where((e) => e.id.equals(id)))
+        .write(const FixedExpensesCompanion(deferredToNextCycle: Value(true)));
+  }
+
+  /// Action inverse : "Ramener au cycle actuel" — recomptée immédiatement
+  /// dans le total du cycle qui la porte déjà (`cycleId` n'a jamais changé,
+  /// donc aucune ligne à recréer ni à dupliquer).
+  Future<void> bringFixedExpenseBackToCurrentCycle(int id) {
+    return (db.update(db.fixedExpenses)..where((e) => e.id.equals(id)))
+        .write(const FixedExpensesCompanion(deferredToNextCycle: Value(false)));
+  }
 
   Future<int> _createTemplate({
     required String name,
@@ -904,9 +966,18 @@ class CycleRepository {
     required int monthlyPaymentCents,
     int? paymentDayOfMonth,
   }) async {
-    final existing = await (db.select(db.fixedExpenses)
+    // Normalement une seule ligne par crédit et par cycle — mais un report
+    // (§ "Affectation manuelle d'une charge au prochain cycle") peut
+    // légitimement en promouvoir une seconde, historique, dans ce même
+    // cycle (§7, "prélèvement atypique") : `getSingleOrNull` planterait
+    // alors. On ne synchronise jamais la ligne reportée (gelée
+    // intentionnellement, cf. [deferFixedExpenseToNextCycle]) — uniquement
+    // l'échéance normale du cycle, s'il y en a une.
+    final matches = await (db.select(db.fixedExpenses)
           ..where((e) => e.cycleId.equals(cycleId) & e.linkedCreditId.equals(creditId)))
-        .getSingleOrNull();
+        .get();
+    final syncable = matches.where((e) => !e.deferredToNextCycle).toList();
+    final existing = syncable.isNotEmpty ? syncable.first : null;
 
     final expectedDate = _paymentDateForCycle(cycleStart, paymentDayOfMonth);
 

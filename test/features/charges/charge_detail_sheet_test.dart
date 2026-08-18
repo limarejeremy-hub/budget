@@ -56,6 +56,7 @@ void main() {
                   categoryId: charge.categoryId,
                   isRecurring: charge.isRecurring,
                   linkedCreditId: charge.linkedCreditId,
+                  deferredToNextCycle: charge.deferredToNextCycle,
                 ),
                 cycleId: cycleId,
               );
@@ -175,6 +176,56 @@ void main() {
       expect(data!.fixedExpenses, isEmpty);
       final credits = await repository.loadCredits();
       expect(credits, isEmpty);
+    });
+  });
+
+  group('"Affectation manuelle d\'une charge au prochain cycle"', () {
+    testWidgets('"Reporter au prochain cycle" demande confirmation puis retire la charge du total', (tester) async {
+      await seedCharge();
+      await tester.pumpWidget(wrap(const SizedBox()));
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Prochain cycle'), findsNothing);
+      await tester.tap(find.text('Reporter au prochain cycle'));
+      await tester.pumpAndSettle();
+
+      expect(
+          find.text('Cette échéance ne sera plus comptée dans le budget du cycle actuel. '
+              'Elle sera automatiquement affectée au prochain cycle.'),
+          findsOneWidget);
+
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      var data = await repository.loadCurrentCycleData();
+      expect(data!.fixedExpenses.single.deferredToNextCycle, isFalse, reason: 'Annuler ne reporte rien');
+
+      await tester.tap(find.text('Reporter au prochain cycle'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Reporter'));
+      await tester.pumpAndSettle();
+
+      data = await repository.loadCurrentCycleData();
+      expect(data!.fixedExpenses.single.deferredToNextCycle, isTrue);
+    });
+
+    testWidgets('une charge reportée affiche le badge "Prochain cycle" et propose "Ramener au cycle actuel"',
+        (tester) async {
+      final id = await seedCharge();
+      await repository.deferFixedExpenseToNextCycle(id);
+      await tester.pumpWidget(wrap(const SizedBox()));
+      await tester.tap(find.text('ouvrir'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Prochain cycle'), findsOneWidget);
+      expect(find.text('Reporter au prochain cycle'), findsNothing);
+      expect(find.text('Ramener au cycle actuel'), findsOneWidget);
+
+      await tester.tap(find.text('Ramener au cycle actuel'));
+      await tester.pumpAndSettle();
+
+      final data = await repository.loadCurrentCycleData();
+      expect(data!.fixedExpenses.single.deferredToNextCycle, isFalse);
     });
   });
 }

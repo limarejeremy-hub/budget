@@ -22,6 +22,12 @@ class FixedExpenseEntity {
   /// cycle" et pas encore rattachée (backfill au fil de l'eau).
   final int? templateId;
 
+  /// "Reporter au prochain cycle" — `true` quand l'utilisateur a
+  /// explicitement décidé que cette échéance sera financée par le cycle
+  /// suivant. N'affecte jamais `expectedDate` (toujours la vraie date de
+  /// prélèvement) ni `cycleId` : seule son appartenance BUDGÉTAIRE change.
+  final bool deferredToNextCycle;
+
   const FixedExpenseEntity({
     required this.id,
     required this.cycleId,
@@ -35,6 +41,7 @@ class FixedExpenseEntity {
     this.isActive = true,
     this.linkedCreditId,
     this.templateId,
+    this.deferredToNextCycle = false,
   });
 
   bool get isLinkedToCredit => linkedCreditId != null;

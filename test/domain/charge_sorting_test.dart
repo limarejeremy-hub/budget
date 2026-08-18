@@ -178,5 +178,25 @@ void main() {
     test('vide si aucune charge', () {
       expect(categoryTotals(const [], categoryNames: categoryNames), isEmpty);
     });
+
+    test(
+        'exclut les charges reportées au prochain cycle du total, mais elles restent listées '
+        '(§ "Affectation manuelle d\'une charge au prochain cycle")', () {
+      final active = charge(id: 50, name: 'Loyer', cents: 90000, categoryId: 1);
+      final deferred = FixedExpenseEntity(
+        id: 51,
+        cycleId: 1,
+        name: 'EDF',
+        expectedAmountCents: 18000,
+        expectedDate: today,
+        categoryId: 1,
+        deferredToNextCycle: true,
+      );
+      final totals = categoryTotals([active, deferred], categoryNames: {1: 'Maison'});
+      expect(totals.single.totalCents, 90000, reason: 'EDF reportée exclue du total');
+
+      final usedCategories = usedChargeCategories([active, deferred], categoryNames: {1: 'Maison'});
+      expect(usedCategories.single.name, 'Maison', reason: 'mais toujours consultable dans sa catégorie');
+    });
   });
 }
