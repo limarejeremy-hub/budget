@@ -161,8 +161,9 @@ void main() {
     });
   });
 
-  group('correctif "affectation des charges par date"', () {
-    testWidgets('déplacer manuellement une date hors du cycle retire immédiatement la charge du total', (tester) async {
+  group('retour à la logique précédente des charges', () {
+    testWidgets('déplacer manuellement une date après la fin du cycle ne retire plus la charge du total',
+        (tester) async {
       // setUp ouvre un cycle très large (2020-2035) pour laisser les autres
       // tests créer librement des charges datées d'aujourd'hui — on le
       // referme ici pour un cycle volontairement étroit, seul moyen de
@@ -174,7 +175,7 @@ void main() {
       );
       await repository.createFixedExpense(
         cycleId: narrowCycleId,
-        name: 'Prélèvement X',
+        name: 'EDF',
         expectedAmountCents: 10000,
         expectedDate: DateTime(2026, 8, 26),
       );
@@ -196,7 +197,9 @@ void main() {
       await tester.pumpAndSettle();
 
       final after = await repository.loadCurrentCycleData();
-      expect(after!.fixedExpenses, isEmpty, reason: '30 août est hors du cycle (28/07 -> 28/08)');
+      expect(after!.fixedExpenses, hasLength(1),
+          reason: 'EDF reste affectée à son cycle (cycleId) même si le 30 août dépasse sa fin (28/08)');
+      expect(after.fixedExpenses.single.expectedDate, DateTime(2026, 8, 30));
     });
   });
 }

@@ -99,19 +99,17 @@ class CycleRepository {
     );
   }
 
-  /// Correctif "affectation des charges par date" : une charge fixe
-  /// appartient au cycle [cycle] si et seulement si sa date réelle
-  /// (`expectedDate`, la source de vérité — y compris après une
-  /// modification manuelle) tombe dans `[cycle.startDate, cycle.endDate]`.
-  /// `cycleId` n'est donc plus utilisé pour déterminer cette appartenance
-  /// (seulement conservé comme contexte de création) : déplacer une charge
-  /// hors des bornes du cycle actuel, ou l'y ramener, en modifiant
-  /// uniquement sa date suffit — aucune réaffectation de `cycleId`
-  /// nécessaire, et le flux réactif existant (tableUpdates sur
-  /// `fixedExpenses`) recalcule tout immédiatement, sans redémarrage.
+  /// Retour à la logique précédente (§ "Retour à la logique précédente des
+  /// charges") : une charge fixe appartient au cycle [cycle] par son
+  /// `cycleId` — jamais retirée du total simplement parce que sa date de
+  /// prélèvement dépasse la fin du cycle (ex : EDF prélevée quelques jours
+  /// après la clôture reste comptée dans le cycle qui l'a générée).
+  /// `expectedDate` reste la source de vérité pour tout ce qui est
+  /// chronologique — Aujourd'hui, Cette semaine, prochaines échéances, tri,
+  /// notifications, statut — mais plus pour l'appartenance financière au
+  /// cycle.
   Future<List<FixedExpense>> _fixedExpensesForCycle(BudgetCycle cycle) {
-    return (db.select(db.fixedExpenses)..where((e) => e.expectedDate.isBetweenValues(cycle.startDate, cycle.endDate)))
-        .get();
+    return (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
   }
 
   /// Flux réactif : se réémet dès qu'une des tables concernées change.
