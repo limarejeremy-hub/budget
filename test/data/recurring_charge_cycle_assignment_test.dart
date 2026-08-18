@@ -356,4 +356,187 @@ void main() {
     expect(after.cycleId, before.cycleId);
     expect(after.name, before.name);
   });
+
+  group(
+      'correctif "affectation des charges par date" : la date modifiée manuellement '
+      'est la source de vérité', () {
+    test(
+        'cas de référence : charge à 100 € le 26/08 comptée dans le cycle 28/07->28/08, '
+        'déplacée au 30/08 -> retirée, argent libre +100 € immédiatement', () async {
+      final cycleId = await repository.createCycle(
+        startDate: DateTime(2026, 7, 28),
+        endDate: DateTime(2026, 8, 28),
+        declaredBankBalanceCents: 0,
+      );
+      await repository.createIncome(
+        cycleId: cycleId,
+        name: 'Salaire',
+        expectedAmountCents: 300000,
+        expectedDate: DateTime(2026, 7, 28),
+      );
+      final chargeId = await repository.createFixedExpense(
+        cycleId: cycleId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 26),
+      );
+
+      final before = await repository.loadCurrentCycleData();
+      expect(before!.fixedExpenses, hasLength(1));
+      final totalBefore =
+          _calculationService.calculateTotalFixedExpenses(before.fixedExpenses.map(fixedExpenseFromRow).toList());
+      expect(totalBefore, 10000);
+      final remainingBefore = _calculationService.calculateRealRemaining(
+        incomes: before.incomes.map(incomeFromRow).toList(),
+        fixedExpenses: before.fixedExpenses.map(fixedExpenseFromRow).toList(),
+        variableExpenses: const [],
+        savings: const [],
+        startingBalanceCents: 0,
+      );
+      expect(remainingBefore, 290000);
+
+      // L'utilisateur déplace manuellement l'échéance au 30 août.
+      await repository.updateFixedExpense(
+        id: chargeId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 30),
+        isRecurring: false,
+        isActive: true,
+      );
+
+      final after = await repository.loadCurrentCycleData();
+      expect(after!.fixedExpenses, isEmpty, reason: '30 août est après la fin du cycle (28 août)');
+      final totalAfter =
+          _calculationService.calculateTotalFixedExpenses(after.fixedExpenses.map(fixedExpenseFromRow).toList());
+      expect(totalAfter, 0);
+      final remainingAfter = _calculationService.calculateRealRemaining(
+        incomes: after.incomes.map(incomeFromRow).toList(),
+        fixedExpenses: after.fixedExpenses.map(fixedExpenseFromRow).toList(),
+        variableExpenses: const [],
+        savings: const [],
+        startingBalanceCents: 0,
+      );
+      expect(remainingAfter, remainingBefore + 10000); // +100 € immédiatement
+
+      // Une seule ligne existe toujours : jamais comptée deux fois (ni sous
+      // l'ancienne date, ni sous la nouvelle).
+      final allRows = await (db.select(db.fixedExpenses)..where((e) => e.id.equals(chargeId))).get();
+      expect(allRows, hasLength(1));
+      expect(allRows.single.expectedDate, DateTime(2026, 8, 30));
+    });
+
+    test('cas inverse : charge hors cycle ramenée manuellement dans le cycle -> ajoutée au calcul', () async {
+      final cycleId = await repository.createCycle(
+        startDate: DateTime(2026, 7, 28),
+        endDate: DateTime(2026, 8, 28),
+        declaredBankBalanceCents: 0,
+      );
+      final chargeId = await repository.createFixedExpense(
+        cycleId: cycleId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 30), // hors cycle dès la création
+      );
+
+      final before = await repository.loadCurrentCycleData();
+      expect(before!.fixedExpenses, isEmpty);
+
+      // L'utilisateur ramène manuellement l'échéance au 25 août.
+      await repository.updateFixedExpense(
+        id: chargeId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 25),
+        isRecurring: false,
+        isActive: true,
+      );
+
+      final after = await repository.loadCurrentCycleData();
+      expect(after!.fixedExpenses, hasLength(1));
+      final total =
+          _calculationService.calculateTotalFixedExpenses(after.fixedExpenses.map(fixedExpenseFromRow).toList());
+      expect(total, 10000);
+    });
+
+    test(
+        'passage réel au cycle suivant : une charge déplacée en dehors du cycle A '
+        'apparaît dans le cycle B une fois celui-ci créé, sans jamais être réaffectée manuellement', () async {
+      final cycleAId = await repository.createCycle(startDate: DateTime(2026, 7, 28), endDate: DateTime(2026, 8, 28));
+      final chargeId = await repository.createFixedExpense(
+        cycleId: cycleAId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 26),
+      );
+      expect((await repository.loadCurrentCycleData())!.fixedExpenses, hasLength(1));
+
+      await repository.updateFixedExpense(
+        id: chargeId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 30),
+        isRecurring: false,
+        isActive: true,
+      );
+      expect((await repository.loadCurrentCycleData())!.fixedExpenses, isEmpty);
+
+      await repository.closeCycle(cycleAId);
+      await repository.createCycle(startDate: DateTime(2026, 8, 29), endDate: DateTime(2026, 9, 28));
+
+      // Le cycle B est maintenant le cycle courant : la charge (toujours
+      // cycleId = A, mais dont la date tombe dans B) y apparaît, sans
+      // qu'aucune réaffectation explicite de cycleId n'ait jamais eu lieu.
+      final currentData = await repository.loadCurrentCycleData();
+      expect(currentData!.fixedExpenses, hasLength(1));
+      expect(currentData.fixedExpenses.single.id, chargeId);
+      expect(currentData.fixedExpenses.single.cycleId, cycleAId);
+    });
+
+    test('modifier une occurrence récurrente ne modifie jamais toute la série', () async {
+      final firstId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+      await repository.createFixedExpense(
+        cycleId: firstId,
+        name: 'Loyer',
+        expectedAmountCents: 90000,
+        expectedDate: DateTime(2026, 1, 5),
+        isRecurring: true,
+      );
+      await repository.closeCycle(firstId);
+
+      final secondId = await repository.createCycle(
+        startDate: DateTime(2026, 2, 1),
+        endDate: DateTime(2026, 2, 28),
+        copyRecurringFromCycleId: firstId,
+      );
+      final secondOccurrence = (await repository.loadCurrentCycleData())!.fixedExpenses.single;
+      expect(secondOccurrence.expectedAmountCents, 90000);
+
+      // L'utilisateur corrige exceptionnellement CETTE échéance à 95000 —
+      // ne doit jamais changer le modèle ni les échéances futures.
+      await repository.updateFixedExpense(
+        id: secondOccurrence.id,
+        name: 'Loyer',
+        expectedAmountCents: 95000,
+        expectedDate: secondOccurrence.expectedDate,
+        isRecurring: true,
+        isActive: true,
+      );
+
+      final updated = await (db.select(db.fixedExpenses)..where((e) => e.id.equals(secondOccurrence.id))).getSingle();
+      expect(updated.expectedAmountCents, 95000);
+
+      final template = await repository.loadTemplate(updated.templateId!);
+      expect(template!.defaultAmountCents, 90000, reason: 'le modèle ne doit jamais être modifié silencieusement');
+
+      await repository.closeCycle(secondId);
+      await repository.createCycle(
+        startDate: DateTime(2026, 3, 1),
+        endDate: DateTime(2026, 3, 31),
+        copyRecurringFromCycleId: secondId,
+      );
+      final thirdOccurrence = (await repository.loadCurrentCycleData())!.fixedExpenses.single;
+      expect(thirdOccurrence.expectedAmountCents, 90000, reason: 'la série continue avec le montant du modèle');
+    });
+  });
 }

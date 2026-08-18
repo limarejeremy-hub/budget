@@ -6,6 +6,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:budgetpilot/core/constants/app_constants.dart';
 import 'package:budgetpilot/core/providers/database_provider.dart';
+import 'package:budgetpilot/core/widgets/date_picker_field.dart';
 import 'package:budgetpilot/data/local/converters/entity_mappers.dart';
 import 'package:budgetpilot/data/local/cycle_repository.dart';
 import 'package:budgetpilot/data/local/database.dart';
@@ -30,7 +31,11 @@ void main() {
   setUp(() async {
     db = AppDatabase.forTesting(NativeDatabase.memory());
     repository = CycleRepository(db);
-    cycleId = await repository.createCycle(startDate: DateTime(2026, 1, 1), endDate: DateTime(2026, 1, 31));
+    // Fenêtre volontairement large : une charge créée sans préciser de
+    // date reprend DateTime.now() (cf. FixedExpenseFormPage.initState) et
+    // n'appartient au cycle (correctif "affectation des charges par
+    // date") que si cette date tombe dans ses bornes.
+    cycleId = await repository.createCycle(startDate: DateTime(2020, 1, 1), endDate: DateTime(2035, 12, 31));
   });
 
   tearDown(() => db.close());
@@ -153,6 +158,45 @@ void main() {
       final intervalField =
           tester.widget<TextFormField>(find.widgetWithText(TextFormField, 'Tous les combien de jours ?'));
       expect(intervalField.controller!.text, '10');
+    });
+  });
+
+  group('correctif "affectation des charges par date"', () {
+    testWidgets('déplacer manuellement une date hors du cycle retire immédiatement la charge du total', (tester) async {
+      // setUp ouvre un cycle très large (2020-2035) pour laisser les autres
+      // tests créer librement des charges datées d'aujourd'hui — on le
+      // referme ici pour un cycle volontairement étroit, seul moyen de
+      // tester un déplacement de date qui en sort réellement.
+      await repository.closeCycle(cycleId);
+      final narrowCycleId = await repository.createCycle(
+        startDate: DateTime(2026, 7, 28),
+        endDate: DateTime(2026, 8, 28),
+      );
+      await repository.createFixedExpense(
+        cycleId: narrowCycleId,
+        name: 'Prélèvement X',
+        expectedAmountCents: 10000,
+        expectedDate: DateTime(2026, 8, 26),
+      );
+      final data = await repository.loadCurrentCycleData();
+      final existing = fixedExpenseFromRow(data!.fixedExpenses.single);
+      expect((await repository.loadCurrentCycleData())!.fixedExpenses, hasLength(1));
+
+      await tester.pumpWidget(wrap(FixedExpenseFormPage(cycleId: narrowCycleId, existing: existing)));
+      await tester.pumpAndSettle();
+
+      // Contourne le sélecteur de date natif (non interactif en test) en
+      // appelant directement le callback du champ, exactement comme le
+      // ferait un utilisateur choisissant une date dans le calendrier.
+      final dateField = tester.widget<DatePickerField>(find.byType(DatePickerField).first);
+      dateField.onChanged(DateTime(2026, 8, 30));
+      await tester.pump();
+
+      await tester.tap(find.text('Enregistrer'));
+      await tester.pumpAndSettle();
+
+      final after = await repository.loadCurrentCycleData();
+      expect(after!.fixedExpenses, isEmpty, reason: '30 août est hors du cycle (28/07 -> 28/08)');
     });
   });
 }

@@ -174,6 +174,13 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
           recurrenceType: _recurrenceType,
           recurrenceIntervalValue: recurrenceIntervalValue,
         );
+        // Un rappel déjà programmé pour l'ancienne date reste sinon actif
+        // dans le système même si la charge n'est plus "aujourd'hui" après
+        // ce changement de date — l'écran d'accueil reprogramme
+        // automatiquement un rappel à jour si elle l'est toujours (§
+        // correctif "affectation des charges par date", replanification
+        // immédiate, sans redémarrage).
+        await ref.read(notificationServiceProvider).cancelChargeReminders([widget.existing!.id]);
       } else {
         await repository.createFixedExpense(
           cycleId: widget.cycleId,

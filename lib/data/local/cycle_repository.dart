@@ -86,7 +86,7 @@ class CycleRepository {
     if (cycle == null) return null;
 
     final incomes = await (db.select(db.incomes)..where((i) => i.cycleId.equals(cycle.id))).get();
-    final fixedExpenses = await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
+    final fixedExpenses = await _fixedExpensesForCycle(cycle);
     final variableExpenses = await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycle.id))).get();
     final savings = await (db.select(db.savings)..where((s) => s.cycleId.equals(cycle.id))).get();
 
@@ -97,6 +97,21 @@ class CycleRepository {
       variableExpenses: variableExpenses,
       savings: savings,
     );
+  }
+
+  /// Correctif "affectation des charges par date" : une charge fixe
+  /// appartient au cycle [cycle] si et seulement si sa date réelle
+  /// (`expectedDate`, la source de vérité — y compris après une
+  /// modification manuelle) tombe dans `[cycle.startDate, cycle.endDate]`.
+  /// `cycleId` n'est donc plus utilisé pour déterminer cette appartenance
+  /// (seulement conservé comme contexte de création) : déplacer une charge
+  /// hors des bornes du cycle actuel, ou l'y ramener, en modifiant
+  /// uniquement sa date suffit — aucune réaffectation de `cycleId`
+  /// nécessaire, et le flux réactif existant (tableUpdates sur
+  /// `fixedExpenses`) recalcule tout immédiatement, sans redémarrage.
+  Future<List<FixedExpense>> _fixedExpensesForCycle(BudgetCycle cycle) {
+    return (db.select(db.fixedExpenses)..where((e) => e.expectedDate.isBetweenValues(cycle.startDate, cycle.endDate)))
+        .get();
   }
 
   /// Flux réactif : se réémet dès qu'une des tables concernées change.
@@ -291,6 +306,12 @@ class CycleRepository {
     required DateTime toCycleStart,
     required DateTime toCycleEnd,
   }) async {
+    // Le backfill s'appuie volontairement sur `cycleId` (le cycle
+    // d'origine de la charge, jamais modifié par une simple édition de
+    // date) plutôt que sur sa date actuelle : ainsi, une charge héritée
+    // dont la date a été déplacée manuellement avant la clôture de ce
+    // cycle reçoit tout de même son modèle ici, avec sa date à jour comme
+    // point de départ — jamais orpheline.
     final legacyRows = await (db.select(db.fixedExpenses)
           ..where((e) =>
               e.cycleId.equals(fromCycleId) &
@@ -357,7 +378,7 @@ class CycleRepository {
       }
 
       final incomes = await (db.select(db.incomes)..where((i) => i.cycleId.equals(cycleId))).get();
-      final fixedExpenses = await (db.select(db.fixedExpenses)..where((e) => e.cycleId.equals(cycleId))).get();
+      final fixedExpenses = await _fixedExpensesForCycle(cycle);
       final variableExpenses = await (db.select(db.variableExpenses)..where((e) => e.cycleId.equals(cycleId))).get();
       final savings = await (db.select(db.savings)..where((s) => s.cycleId.equals(cycleId))).get();
 
@@ -493,6 +514,15 @@ class CycleRepository {
       // charge est À LA FOIS récurrente ET active ET non liée à un crédit —
       // `isRecurring` seul ne suffit pas : une charge récurrente désactivée
       // (ex : abonnement résilié) ne doit plus jamais être recopiée.
+      //
+      // Modifier une occurrence ne modifie JAMAIS silencieusement le reste
+      // de la série (§ "ne jamais appliquer cela silencieusement") : seul
+      // le type de récurrence / intervalle est propagé au modèle — c'est
+      // une règle de calcul des occurrences FUTURES, pas une valeur propre
+      // à cette échéance. Nom, montant, jour et catégorie du modèle ne sont
+      // fixés qu'à sa création ; les modifier ici resterait local à cette
+      // seule occurrence (`FixedExpensesCompanion` ci-dessous), jamais
+      // propagé aux prochaines générations.
       if (isRecurring && isActive && linkedCreditId == null) {
         if (templateId == null) {
           templateId = await _createTemplate(
@@ -507,10 +537,6 @@ class CycleRepository {
           final existingTemplateId = templateId;
           await (db.update(db.recurringTemplates)..where((t) => t.id.equals(existingTemplateId))).write(
             RecurringTemplatesCompanion(
-              name: Value(name),
-              defaultAmountCents: Value(expectedAmountCents),
-              defaultDay: Value(expectedDate.day),
-              categoryId: Value(categoryId),
               isActive: const Value(true),
               recurrenceType: Value(recurrenceType),
               intervalValue: Value(recurrenceIntervalValue),
