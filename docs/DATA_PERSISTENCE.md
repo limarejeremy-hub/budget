@@ -1,9 +1,9 @@
 # Conservation des données — BudgetPilot
 
 Ce document explique précisément dans quels cas les données locales de
-BudgetPilot (cycles, revenus, charges fixes, dépenses variables, épargnes)
-sont conservées d'une version de l'app à l'autre, dans quels cas elles
-peuvent être perdues, et pourquoi.
+BudgetPilot (cycles, revenus, charges fixes, dépenses variables, épargnes,
+crédits) sont conservées d'une version de l'app à l'autre, dans quels cas
+elles peuvent être perdues, et pourquoi.
 
 ## Où sont stockées les données
 
@@ -61,6 +61,86 @@ fichier, sur l'appareil. C'est pourquoi la fonction de sauvegarde manuelle
 - `test/data/migration_test.dart` vérifie qu'une base simulant le schéma v1
   (avant l'ajout de la colonne `BudgetCycles.name`) migre vers le schéma
   actuel sans perdre aucune donnée existante.
+- `test/data/credit_migration_test.dart` vérifie qu'une base simulant le
+  schéma v2 (avant l'ajout de la table `Credits`) migre vers le schéma
+  courant sans perdre aucune donnée existante, qu'une base simulant le
+  schéma v3 (avant l'ajout des colonnes organisme/couleur/icône) migre vers
+  v4 sans perdre les crédits déjà enregistrés, et qu'une base simulant le
+  schéma v4 (avant le jour de prélèvement, l'assurance, le lien
+  charge ↔ crédit et l'historique de notifications) migre vers v5 en
+  **reliant automatiquement** les charges "Crédit" existantes au crédit
+  correspondant (voir « Fusion Charges/Crédits (V0.9) » ci-dessous), et
+  qu'une base simulant le schéma v5 (avant la table `Projects`) migre vers
+  v6 sans perdre aucun crédit ni aucune charge existants (voir « Project
+  Planner (V1.0) » ci-dessous), et qu'une base simulant le schéma v6 (avant
+  la priorité des projets) migre vers v7 sans perdre aucun projet existant
+  (voir « Safe Projects (V1.1) » ci-dessous).
+
+### Fusion Charges/Crédits (V0.9)
+
+Depuis la V0.9, un crédit est la **source de vérité unique** de sa
+mensualité : créer un crédit génère automatiquement sa charge fixe dans le
+cycle en cours (catégorie « Crédit »), la modifier met à jour la charge non
+encore confirmée, et le supprimer supprime toutes ses charges liées — sans
+jamais dupliquer ni exiger de double saisie.
+
+- **Schéma v4 → v5** (`AppDatabase.schemaVersion = 5`) ajoute, de façon
+  strictement additive :
+  - `Credits.paymentDayOfMonth` et `Credits.insuranceCents` (nullable) ;
+  - `FixedExpenses.linkedCreditId` (nullable, référence `Credits.id`) — le
+    lien charge ↔ crédit ;
+  - la table `NotificationLogs` (historique persistant des notifications,
+    voir plus bas).
+- **Comptes existants (compatibilité ascendante)** : au moment de la
+  migration, une fonction de réconciliation (`reconcileCreditLinkedCharges`)
+  relie automatiquement chaque charge fixe de catégorie « Crédit » sans
+  lien à un crédit existant du même nom (comparaison insensible à la casse
+  et aux espaces). Aucun crédit ni aucune charge n'a besoin d'être ressaisi.
+  La même fonction est réutilisée à la fin de **l'import de sauvegarde**
+  (les identifiants de crédit ne sont pas stables d'un appareil à l'autre,
+  donc `linkedCreditId` n'est jamais exporté tel quel — la réconciliation
+  par nom reconstruit le lien après import).
+- Une charge déjà **confirmée** (prélevée) n'est plus jamais réécrite par la
+  synchronisation automatique — seul l'historique futur (charges à venir ou
+  à confirmer) suit les modifications du crédit.
+
+## Project Planner (V1.0)
+
+- **Schéma v5 → v6** (`AppDatabase.schemaVersion = 6`) ajoute, de façon
+  strictement additive, la table `Projects` — aucune colonne existante
+  n'est modifiée ni supprimée, aucun crédit ni aucune charge n'est touché.
+- La table `Projects` ne stocke que des **entrées saisies par
+  l'utilisateur** (nom, catégorie, prix cible, apport, mode envisagé…) —
+  jamais un score ou une trajectoire calculés, qui restent toujours
+  recalculés à la volée à partir des données réelles (argent libre,
+  crédits actifs, charges) pour ne jamais devenir obsolètes.
+- Ce module est indépendant de l'export/import de sauvegarde existant :
+  aucune modification n'a été apportée au format de sauvegarde pour cette
+  version.
+
+## Safe Projects (V1.1)
+
+- **Schéma v6 → v7** (`AppDatabase.schemaVersion = 7`) ajoute, de façon
+  strictement additive, la colonne `Projects.priority` (valeur par défaut
+  `"moyenne"`) — aucune autre colonne ni table n'est touchée.
+- Les projets déjà enregistrés reçoivent automatiquement la priorité
+  `"moyenne"` à la migration — jamais une valeur inventée ou aléatoire.
+- Comme le score de faisabilité, le Financial Safety Score (reste à vivre,
+  taux d'endettement) n'est **jamais persisté** : toujours recalculé à la
+  volée à partir des données réelles courantes.
+
+## Historique des notifications (V0.9)
+
+BudgetPilot fonctionne à 100 % hors-ligne : les rappels (résumé du matin,
+prélèvement important, bilan du soir, crédit terminé, mensualité mise à
+jour) sont des notifications **locales** (`flutter_local_notifications`),
+sans aucun serveur ni compte. Chaque notification affichée est aussi
+journalisée dans la table `NotificationLogs`, qui reste la source de vérité
+du centre de notifications même si la permission système est refusée ou si
+le bandeau Android a déjà disparu. Cette table n'est **pas** incluse dans
+l'export/import de sauvegarde : c'est un historique local, régénéré au fil
+de l'usage de l'app, pas une donnée financière à transférer d'un appareil à
+l'autre.
 
 ## ❌ Les données PEUVENT être perdues quand…
 
@@ -125,15 +205,19 @@ réinstallation.
 Paramètres → Sauvegarde :
 
 - **Exporter une sauvegarde** : génère un fichier JSON local (cycles,
-  revenus, charges fixes, dépenses variables, épargnes — aucune donnée
-  bancaire sensible comme des identifiants ou des IBAN) et laisse
-  l'utilisateur choisir où l'enregistrer.
+  revenus, charges fixes, dépenses variables, épargnes, **crédits** —
+  aucune donnée bancaire sensible comme des identifiants ou des IBAN) et
+  laisse l'utilisateur choisir où l'enregistrer.
 - **Importer une sauvegarde** : sélectionne un fichier JSON, le valide
   (format et champs obligatoires) avant toute écriture, puis demande
-  confirmation pour **fusionner** (ajouter les cycles importés aux données
-  actuelles) ou **remplacer** (supprimer les données actuelles avant
-  d'importer). L'import est transactionnel : en cas d'erreur, aucune donnée
-  n'est modifiée.
+  confirmation pour **fusionner** (ajouter les cycles et crédits importés
+  aux données actuelles) ou **remplacer** (supprimer les données actuelles
+  avant d'importer, crédits compris). L'import est transactionnel : en cas
+  d'erreur, aucune donnée n'est modifiée.
+- **Compatibilité ascendante** : une sauvegarde exportée par une version de
+  BudgetPilot antérieure à la V0.7 (sans champ `credits`) s'importe
+  normalement — le champ est simplement absent, traité comme une liste
+  vide, sans erreur. Testé par `test/data/backup_test.dart`.
 
 Aucun envoi vers un service cloud n'est effectué — le fichier reste local
 jusqu'à ce que l'utilisateur choisisse de le déplacer lui-même.

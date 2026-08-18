@@ -4,10 +4,15 @@ import 'package:flutter/services.dart';
 /// Champ de saisie d'un montant en euros (virgule ou point accepté),
 /// converti en centimes. [required] impose un montant strictement positif ;
 /// sinon le champ peut rester vide (montant réel facultatif par exemple).
+/// [allowNegative] autorise en plus zéro et les montants négatifs (ex : un
+/// solde bancaire déclaré peut être à découvert) — `false` par défaut pour
+/// tous les autres montants de l'application (revenus, charges, apports...),
+/// qui n'ont jamais de sens négatif.
 class EuroAmountField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final bool required;
+  final bool allowNegative;
   final String? Function(String?)? extraValidator;
 
   const EuroAmountField({
@@ -15,6 +20,7 @@ class EuroAmountField extends StatelessWidget {
     required this.controller,
     required this.label,
     this.required = true,
+    this.allowNegative = false,
     this.extraValidator,
   });
 
@@ -30,8 +36,10 @@ class EuroAmountField extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextFormField(
       controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: false),
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+      keyboardType: TextInputType.numberWithOptions(decimal: true, signed: allowNegative),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(allowNegative ? RegExp(r'[-0-9.,]') : RegExp(r'[0-9.,]')),
+      ],
       decoration: InputDecoration(
         labelText: required ? label : '$label (facultatif)',
         suffixText: '€',
@@ -44,7 +52,7 @@ class EuroAmountField extends StatelessWidget {
         }
         final cents = parseCents(text);
         if (cents == null) return 'Montant invalide';
-        if (cents <= 0) return 'Le montant doit être supérieur à 0';
+        if (!allowNegative && cents <= 0) return 'Le montant doit être supérieur à 0';
         return extraValidator?.call(value);
       },
     );

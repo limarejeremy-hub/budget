@@ -9,6 +9,13 @@ class DashboardViewData {
   final DateTime cycleEnd;
   final int totalIncomeCents;
   final int totalFixedExpensesCents;
+
+  /// Charges fixes hors mensualités de crédit — exclut les charges liées à
+  /// un crédit actif (`FixedExpenseEntity.isLinkedToCredit`), déjà comptées
+  /// via sa mensualité (`CreditCalculationService.totalMonthlyPayments`).
+  /// Sert au RESTE À VIVRE STRUCTUREL (`HouseholdFinanceService`), jamais à
+  /// l'argent libre du cycle qui utilise [totalFixedExpensesCents].
+  final int totalFixedExpensesExcludingCreditsCents;
   final int totalVariableExpensesCents;
   final int totalSavingsCents;
   final int realRemainingCents;
@@ -55,6 +62,7 @@ class DashboardViewData {
     required this.cycleEnd,
     required this.totalIncomeCents,
     required this.totalFixedExpensesCents,
+    this.totalFixedExpensesExcludingCreditsCents = 0,
     required this.totalVariableExpensesCents,
     required this.totalSavingsCents,
     required this.realRemainingCents,
@@ -94,6 +102,27 @@ class DashboardViewData {
     if (totalDays <= 0) return 1;
     final elapsed = today.difference(start).inDays;
     return (elapsed / totalDays).clamp(0.0, 1.0);
+  }
+
+  /// Nombre total de jours du cycle, bornes incluses (ex : un cycle du
+  /// 27/07 au 26/08 compte 31 jours). Fonctionne pour tout cycle, y compris
+  /// les mois courts ou les durées personnalisées.
+  int totalDaysInclusive() {
+    final start = _dayOnly(cycleStart);
+    final end = _dayOnly(cycleEnd);
+    final total = end.difference(start).inDays + 1;
+    return total < 1 ? 1 : total;
+  }
+
+  /// Numéro du jour courant dans le cycle (le jour de départ est le jour 1),
+  /// toujours compris entre 1 et [totalDaysInclusive]. Utilisé pour
+  /// l'affichage "Jour X / Y".
+  int currentDayNumber({DateTime? now}) {
+    final today = _dayOnly(now ?? DateTime.now());
+    final start = _dayOnly(cycleStart);
+    final total = totalDaysInclusive();
+    final elapsed = today.difference(start).inDays + 1;
+    return elapsed.clamp(1, total);
   }
 
   static DateTime _dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_constants.dart';
@@ -8,6 +9,15 @@ import '../../core/widgets/date_picker_field.dart';
 import '../../core/widgets/euro_amount_field.dart';
 import '../../core/widgets/form_actions_row.dart';
 import '../../domain/entities/fixed_expense_entity.dart';
+import '../credits/widgets/complete_credit_sheet.dart';
+
+const _recurrenceLabels = {
+  RecurrenceType.mensuelJourFixe: 'Mensuel (jour fixe)',
+  RecurrenceType.toutesLesXSemaines: 'Toutes les X semaines',
+  RecurrenceType.tousLesXJours: 'Tous les X jours',
+};
+
+const _kCreditCategoryName = 'Crédit';
 
 /// Formulaire de création / modification d'une charge fixe.
 /// Le statut initial est déterminé automatiquement à partir de la date
@@ -31,6 +41,8 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
   int? _categoryId;
   late bool _isRecurring;
   late bool _isActive;
+  String _recurrenceType = RecurrenceType.mensuelJourFixe;
+  late final TextEditingController _intervalController;
   bool _saving = false;
 
   bool get _isEditing => widget.existing != null;
@@ -44,14 +56,30 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
       text: existing == null ? '' : (existing.expectedAmountCents / 100).toStringAsFixed(2),
     );
     _actualAmountController = TextEditingController(
-      text: existing?.actualAmountCents == null
-          ? ''
-          : (existing!.actualAmountCents! / 100).toStringAsFixed(2),
+      text: existing?.actualAmountCents == null ? '' : (existing!.actualAmountCents! / 100).toStringAsFixed(2),
     );
     _expectedDate = existing?.expectedDate ?? DateTime.now();
     _categoryId = existing?.categoryId;
     _isRecurring = existing?.isRecurring ?? false;
     _isActive = existing?.isActive ?? true;
+    _intervalController = TextEditingController();
+
+    // Une charge récurrente existante affiche par défaut "Mensuel (jour
+    // fixe)" — comportement historique — jusqu'à ce que son modèle
+    // récurrent (s'il existe déjà) soit chargé, ci-dessous.
+    final templateId = existing?.templateId;
+    if (templateId != null) {
+      _loadTemplate(templateId);
+    }
+  }
+
+  Future<void> _loadTemplate(int templateId) async {
+    final template = await ref.read(cycleRepositoryProvider).loadTemplate(templateId);
+    if (!mounted || template == null) return;
+    setState(() {
+      _recurrenceType = template.recurrenceType;
+      _intervalController.text = template.intervalValue?.toString() ?? '';
+    });
   }
 
   @override
@@ -59,38 +87,122 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
     _nameController.dispose();
     _expectedAmountController.dispose();
     _actualAmountController.dispose();
+    _intervalController.dispose();
     super.dispose();
   }
 
+  /// Une charge fixe catégorisée "Crédit" ne doit jamais rester une charge
+  /// isolée : si elle est déjà liée à un crédit, le lien est conservé (et le
+  /// crédit synchronisé) ; sinon, un crédit correspondant existant est
+  /// recherché par nom, ou — à défaut — sa création est demandée via
+  /// [showCompleteCreditSheet]. Si l'utilisateur annule cette création,
+  /// l'enregistrement de la charge est abandonné entièrement plutôt que de
+  /// laisser une charge "Crédit" sans crédit lié.
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
 
     final repository = ref.read(cycleRepositoryProvider);
     final expectedCents = EuroAmountField.parseCents(_expectedAmountController.text)!;
     final actualCents = EuroAmountField.parseCents(_actualAmountController.text);
+    final name = _nameController.text.trim();
 
+    final categories = await ref.read(categoriesForTypeProvider(EntityType.fixedExpense).future);
+    int? creditCategoryId;
+    for (final category in categories) {
+      if (category.name == _kCreditCategoryName) {
+        creditCategoryId = category.id;
+        break;
+      }
+    }
+    final isCreditCategory = creditCategoryId != null && _categoryId == creditCategoryId;
+
+    int? linkedCreditId = widget.existing?.linkedCreditId;
+    // Un crédit tout juste créé depuis la BottomSheet contient déjà les
+    // bonnes valeurs (y compris un nom éventuellement personnalisé) : on ne
+    // le resynchronise pas immédiatement pour ne pas écraser cette saisie.
+    var skipCreditSync = false;
+
+    if (!isCreditCategory) {
+      linkedCreditId = null;
+    } else if (linkedCreditId == null) {
+      final cycleId = widget.existing?.cycleId ?? widget.cycleId;
+      final match = await repository.findLinkableCreditForCharge(
+        name: name,
+        cycleId: cycleId,
+        excludeChargeId: widget.existing?.id,
+      );
+      if (match != null) {
+        linkedCreditId = match.id;
+      } else {
+        if (!mounted) return;
+        final createdCreditId = await showCompleteCreditSheet(
+          context,
+          chargeName: name,
+          monthlyPaymentCents: expectedCents,
+          paymentDayOfMonth: _expectedDate.day,
+        );
+        if (createdCreditId == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text(
+                  'Choisissez une autre catégorie ou complétez les informations du crédit pour enregistrer cette charge.'),
+            ));
+          }
+          return;
+        }
+        linkedCreditId = createdCreditId;
+        skipCreditSync = true;
+      }
+    }
+
+    final recurrenceIntervalValue =
+        RecurrenceType.withInterval.contains(_recurrenceType) ? int.tryParse(_intervalController.text) : null;
+
+    setState(() => _saving = true);
     try {
       if (_isEditing) {
         await repository.updateFixedExpense(
           id: widget.existing!.id,
-          name: _nameController.text.trim(),
+          name: name,
           expectedAmountCents: expectedCents,
           actualAmountCents: actualCents,
           expectedDate: _expectedDate,
           categoryId: _categoryId,
           isRecurring: _isRecurring,
           isActive: _isActive,
+          linkedCreditId: linkedCreditId,
+          recurrenceType: _recurrenceType,
+          recurrenceIntervalValue: recurrenceIntervalValue,
         );
+        // Un rappel déjà programmé pour l'ancienne date reste sinon actif
+        // dans le système même si la charge n'est plus "aujourd'hui" après
+        // ce changement de date — l'écran d'accueil reprogramme
+        // automatiquement un rappel à jour si elle l'est toujours
+        // (replanification immédiate, sans redémarrage — la date reste la
+        // source de vérité pour les rappels, même si elle ne détermine plus
+        // l'appartenance financière au cycle).
+        await ref.read(notificationServiceProvider).cancelChargeReminders([widget.existing!.id]);
       } else {
         await repository.createFixedExpense(
           cycleId: widget.cycleId,
-          name: _nameController.text.trim(),
+          name: name,
           expectedAmountCents: expectedCents,
           actualAmountCents: actualCents,
           expectedDate: _expectedDate,
           categoryId: _categoryId,
           isRecurring: _isRecurring,
+          isActive: _isActive,
+          linkedCreditId: linkedCreditId,
+          recurrenceType: _recurrenceType,
+          recurrenceIntervalValue: recurrenceIntervalValue,
+        );
+      }
+      if (linkedCreditId != null && !skipCreditSync) {
+        await repository.syncCreditFromCharge(
+          creditId: linkedCreditId,
+          name: name,
+          monthlyPaymentCents: expectedCents,
+          paymentDayOfMonth: _expectedDate.day,
           isActive: _isActive,
         );
       }
@@ -152,6 +264,36 @@ class _FixedExpenseFormPageState extends ConsumerState<FixedExpenseFormPage> {
                 value: _isRecurring,
                 onChanged: (v) => setState(() => _isRecurring = v),
               ),
+              if (_isRecurring) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _recurrenceType,
+                  decoration: const InputDecoration(labelText: 'Récurrence'),
+                  items: [
+                    for (final entry in _recurrenceLabels.entries)
+                      DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+                  ],
+                  onChanged: (value) => setState(() => _recurrenceType = value!),
+                ),
+                if (RecurrenceType.withInterval.contains(_recurrenceType)) ...[
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _intervalController,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: _recurrenceType == RecurrenceType.toutesLesXSemaines
+                          ? 'Tous les combien de semaines ?'
+                          : 'Tous les combien de jours ?',
+                    ),
+                    validator: (v) {
+                      final n = int.tryParse(v?.trim() ?? '');
+                      if (n == null || n < 1) return 'Doit être un nombre entier ≥ 1';
+                      return null;
+                    },
+                  ),
+                ],
+              ],
               SwitchListTile(
                 title: const Text('Active'),
                 value: _isActive,

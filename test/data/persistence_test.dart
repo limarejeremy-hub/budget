@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:budgetpilot/data/local/converters/entity_mappers.dart';
 import 'package:budgetpilot/data/local/cycle_repository.dart';
 import 'package:budgetpilot/data/local/database.dart';
+import 'package:budgetpilot/domain/calculations/dashboard_view_builder.dart';
 
 /// Vérifie que les données survivent réellement à une fermeture puis
 /// réouverture de la base — c'est le mécanisme dont dépend la conservation
@@ -62,12 +64,64 @@ void main() {
     await db.close();
   });
 
-  test('la version de schéma Drift actuelle est bien celle attendue (2)', () {
+  test('redémarrage de l\'application : le solde de départ reste intégré au calcul de l\'argent libre', () async {
+    final tempDir = await Directory.systemTemp.createTemp('budgetpilot_persistence_restart_test');
+    final dbFile = File('${tempDir.path}/budgetpilot.sqlite');
+    addTearDown(() => tempDir.delete(recursive: true));
+
+    // 1. Créer une base avec un solde bancaire déclaré négatif et un revenu.
+    var db = AppDatabase.forTesting(NativeDatabase(dbFile));
+    var repository = CycleRepository(db);
+
+    await repository.createCycle(
+      startDate: DateTime(2026, 7, 27),
+      endDate: DateTime(2026, 8, 26),
+      name: 'Cycle de test',
+      declaredBankBalanceCents: -58600,
+    );
+    final cycleData = await repository.loadCurrentCycleData();
+    await repository.createIncome(
+      cycleId: cycleData!.cycle.id,
+      name: 'Salaire',
+      expectedAmountCents: 424300,
+      expectedDate: DateTime(2026, 7, 27),
+    );
+
+    // 2. Fermer puis rouvrir la base — simule un redémarrage de l'application.
+    await db.close();
+    db = AppDatabase.forTesting(NativeDatabase(dbFile));
+    repository = CycleRepository(db);
+
+    // 3. Recalculer via le même chemin que l'application (DashboardViewBuilder)
+    // et vérifier que le solde de départ est toujours intégré à l'argent libre.
+    final raw = await repository.loadCurrentCycleData();
+    expect(raw, isNotNull);
+    expect(raw!.cycle.declaredBankBalanceCents, -58600);
+
+    const builder = DashboardViewBuilder();
+    final dashboard = builder.build(
+      cycleId: raw.cycle.id,
+      cycleStart: raw.cycle.startDate,
+      cycleEnd: raw.cycle.endDate,
+      incomes: raw.incomes.map(incomeFromRow).toList(),
+      fixedExpenses: raw.fixedExpenses.map(fixedExpenseFromRow).toList(),
+      variableExpenses: raw.variableExpenses.map(variableExpenseFromRow).toList(),
+      savings: raw.savings.map(savingFromRow).toList(),
+      declaredBankBalanceCents: raw.cycle.declaredBankBalanceCents,
+    );
+
+    // Cas de référence : -58600 + 424300 = 365700.
+    expect(dashboard.realRemainingCents, 365700);
+
+    await db.close();
+  });
+
+  test('la version de schéma Drift actuelle est bien celle attendue (9)', () {
     // Ce test échoue volontairement si quelqu'un bumpe schemaVersion sans
     // ajouter la branche de migration correspondante dans AppDatabase.migration
     // — rappel explicite à mettre à jour ce test et la doc de persistance.
     final db = AppDatabase.forTesting(NativeDatabase.memory());
-    expect(db.schemaVersion, 2);
+    expect(db.schemaVersion, 9);
     db.close();
   });
 }

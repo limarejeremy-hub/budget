@@ -4,11 +4,20 @@ import '../../data/local/converters/entity_mappers.dart';
 import '../../data/local/cycle_repository.dart';
 import '../../domain/calculations/dashboard_view_builder.dart';
 import '../../domain/models/dashboard_view_data.dart';
+import '../notifications/notification_service.dart';
 import 'database_provider.dart';
 
 final cycleRepositoryProvider = Provider<CycleRepository>((ref) {
   final db = ref.watch(appDatabaseProvider);
   return CycleRepository(db);
+});
+
+/// Une seule instance de [NotificationService] pour toute l'application
+/// (pas `autoDispose` : les notifications planifiées doivent survivre à la
+/// navigation entre écrans).
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  final repository = ref.watch(cycleRepositoryProvider);
+  return NotificationService(repository);
 });
 
 /// null = aucun cycle en cours (état vide de l'écran).

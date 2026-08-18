@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/routing/app_page_route.dart';
+import '../../credits/credit_form_page.dart';
 import '../../entries/fixed_expense_form_page.dart';
 import '../../entries/income_form_page.dart';
 import '../../entries/saving_form_page.dart';
@@ -56,6 +57,13 @@ class AddEntryFab extends StatelessWidget {
                 label: 'Épargne',
                 onTap: () => Navigator.of(context).push(AppPageRoute(
                   builder: (_) => SavingFormPage(cycleId: cycleId),
+                )),
+              ),
+              _AddOptionTile(
+                icon: Icons.account_balance_outlined,
+                label: 'Crédit',
+                onTap: () => Navigator.of(context).push(AppPageRoute(
+                  builder: (_) => const CreditFormPage(),
                 )),
               ),
               const SizedBox(height: 8),

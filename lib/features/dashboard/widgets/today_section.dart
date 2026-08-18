@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/formatting/currency_formatter.dart';
+import '../../../core/routing/app_page_route.dart';
 import '../../../core/theme/charge_status_presentation.dart';
 import '../../../core/theme/design_tokens.dart';
+import '../../../domain/calculations/pending_confirmations.dart';
 import '../../../domain/entities/fixed_expense_entity.dart';
 import '../../../domain/models/dashboard_view_data.dart';
+import '../../confirmations/confirmations_page.dart';
 
 /// Section "Aujourd'hui" — le cockpit du jour : prélèvements du jour,
-/// revenus attendus aujourd'hui, alertes importantes. Purement
-/// présentationnel, construit à partir de [DashboardViewData] (déjà filtré
-/// par [DashboardViewBuilder]) : aucune nouvelle requête.
+/// revenus attendus aujourd'hui, alertes importantes. Construit à partir de
+/// [DashboardViewData] (déjà filtré par [DashboardViewBuilder]) : aucune
+/// nouvelle requête. Cliquable (V0.9) : ouvre directement le centre de
+/// confirmations, avec un badge indiquant le nombre d'opérations en
+/// attente.
 class TodaySection extends StatelessWidget {
   final DashboardViewData data;
   const TodaySection({super.key, required this.data});
@@ -18,44 +23,75 @@ class TodaySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasContent =
         data.todayFixedExpenses.isNotEmpty || data.todayIncomes.isNotEmpty || data.alerts.isNotEmpty;
+    final pendingCount = pendingConfirmations(data).length;
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.today_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: AppSpacing.sm),
-                Text("Aujourd'hui", style: Theme.of(context).textTheme.titleMedium),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => Navigator.of(context).push(AppPageRoute(builder: (_) => const ConfirmationsPage())),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.today_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(child: Text("Aujourd'hui", style: Theme.of(context).textTheme.titleMedium)),
+                  if (pendingCount > 0) _PendingBadge(count: pendingCount),
+                  const SizedBox(width: AppSpacing.xs),
+                  Icon(Icons.chevron_right_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              if (!hasContent)
+                _EmptyToday()
+              else ...[
+                for (final charge in data.todayFixedExpenses)
+                  _TodayRow(
+                    icon: Icons.receipt_long_rounded,
+                    color: CategoryColors.fixedExpense,
+                    label: charge.name,
+                    cents: charge.effectiveAmountCents,
+                    negative: true,
+                  ),
+                for (final income in data.todayIncomes)
+                  _TodayRow(
+                    icon: Icons.trending_up_rounded,
+                    color: CategoryColors.income,
+                    label: income.name,
+                    cents: income.effectiveAmountCents,
+                    negative: false,
+                  ),
+                for (final alert in data.alerts) _AlertRow(charge: alert),
               ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            if (!hasContent)
-              _EmptyToday()
-            else ...[
-              for (final charge in data.todayFixedExpenses)
-                _TodayRow(
-                  icon: Icons.receipt_long_rounded,
-                  color: CategoryColors.fixedExpense,
-                  label: charge.name,
-                  cents: charge.effectiveAmountCents,
-                  negative: true,
-                ),
-              for (final income in data.todayIncomes)
-                _TodayRow(
-                  icon: Icons.trending_up_rounded,
-                  color: CategoryColors.income,
-                  label: income.name,
-                  cents: income.effectiveAmountCents,
-                  negative: false,
-                ),
-              for (final alert in data.alerts) _AlertRow(charge: alert),
             ],
-          ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _PendingBadge extends StatelessWidget {
+  final int count;
+  const _PendingBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.error,
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(context)
+            .textTheme
+            .labelSmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onError, fontWeight: FontWeight.w700),
       ),
     );
   }

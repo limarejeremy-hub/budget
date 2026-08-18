@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Notifications locales (V0.9) : POST_NOTIFICATIONS et VIBRATE sont
+         déjà déclarées par le plugin flutter_local_notifications lui-même.
+         RECEIVE_BOOT_COMPLETED permet aux rappels planifiés (résumé du
+         matin, bilan du soir, rappel avant un prélèvement) de survivre à un
+         redémarrage de l'appareil. Aucune alarme exacte n'est utilisée
+         (AndroidScheduleMode.inexactAllowWhileIdle) : pas besoin de
+         SCHEDULE_EXACT_ALARM / USE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="BudgetPilot"
         android:name="${applicationName}"
@@ -23,5 +31,20 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Notifications locales (V0.9) — flutter_local_notifications :
+             receivers requis pour les rappels planifiés (y compris après
+             redémarrage) et pour le traitement des actions de notification
+             (Confirmer / Me rappeler dans 2h / Ignorer aujourd'hui). -->
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
     </application>
 </manifest>
